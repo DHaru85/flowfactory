@@ -190,6 +190,38 @@ class ConversationCacheStore:
         pipe.execute()
 
 
+class WorkflowCacheStore:
+    """Run 热状态与 HITL 提醒去重。"""
+
+    def __init__(self, client: redis.Redis) -> None:
+        self._client = client
+
+    def set_run_active(
+        self,
+        run_id: uuid.UUID | str,
+        status: str,
+        last_event_at: str,
+        ttl: int = 86400,
+    ) -> None:
+        key = CacheKeys.wf_run_active(run_id)
+        pipe = self._client.pipeline()
+        pipe.hset(key, mapping={"status": status, "last_event_at": last_event_at})
+        pipe.expire(key, ttl)
+        pipe.execute()
+
+    def get_run_active(self, run_id: uuid.UUID | str) -> dict[str, str]:
+        data = self._client.hgetall(CacheKeys.wf_run_active(run_id))
+        return dict(data) if data else {}
+
+    def clear_run_active(self, run_id: uuid.UUID | str) -> None:
+        self._client.delete(CacheKeys.wf_run_active(run_id))
+
+    def mark_hitl_notify(self, hitl_id: uuid.UUID | str, ttl: int) -> bool:
+        return bool(
+            self._client.set(CacheKeys.hitl_notify(hitl_id), "1", nx=True, ex=ttl)
+        )
+
+
 class NotificationCacheStore:
     """Webhook 投递去重。"""
 

@@ -91,7 +91,10 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     organization: Mapped["Organization"] = relationship(back_populates="users")
     department: Mapped["Department | None"] = relationship(back_populates="users")
-    roles: Mapped[list["UserRole"]] = relationship(back_populates="user")
+    roles: Mapped[list["UserRole"]] = relationship(
+        back_populates="user",
+        foreign_keys="UserRole.user_id",
+    )
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user")
     external_identities: Mapped[list["ExternalIdentity"]] = relationship(back_populates="user")
 

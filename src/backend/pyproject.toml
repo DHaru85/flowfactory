@@ -13,6 +13,15 @@ dependencies = [
     "pgvector>=0.3.6",
     "redis>=5.2.0",
     "greenlet>=3.1.0",
+    "celery>=5.4.0",
+    "kombu>=5.4.0",
+    "croniter>=4.0.0",
+    "langgraph>=0.4.0",
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "langchain-core>=0.3.0",
+    "openai>=1.60.0",
+    "temporalio>=1.8.0",
+    "psycopg-pool>=3.2.0",
 ]
 
 [project.optional-dependencies]

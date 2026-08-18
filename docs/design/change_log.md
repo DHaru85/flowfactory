@@ -14,3 +14,4 @@
 | 2026.08.18 17:11 | src/backend | Agent/Knowledge/Audit ORM 扩展 | 三域 ORM + service/persistence 仓储；pgvector 扩展；Alembic d8fe5039a9d1 |
 | 2026.08.18 17:20 | src/backend | 剩余映射层与数据层 | Graph/Security/Observability/Notification ORM；全域仓储与 factory；Redis cache；Alembic 00fe9d0489d1（共 49 表） |
 | 2026.08.18 17:30 | src/backend | PG 异步连接池 | create_async_engine + AsyncSession；pool_size 默认 20；仓储 async 适配 |
+| 2026.08.18 18:00 | src/backend | 工作流运行时环境 | Celery eager 调度；LangGraph + Postgres checkpointer；vLLM OpenAI 兼容 LLM；HITL/Beat；Temporal 骨架 |

@@ -18,3 +18,6 @@ def test_cache_keys_format() -> None:
     assert CacheKeys.ingest_progress("job-1") == "kb:ingest:progress:job-1"
     assert CacheKeys.stream_buffer("msg-1") == "conv:stream:msg-1"
     assert CacheKeys.notify_dedupe("ep-1", "hash") == "notify:dedupe:ep-1:hash"
+    assert CacheKeys.wf_run_active("run-1") == "wf:run:active:run-1"
+    assert CacheKeys.hitl_notify("hitl-1") == "wf:hitl:notify:hitl-1"
+    assert CacheKeys.beat_lock("beat-1") == "agent:beat:lock:beat-1"

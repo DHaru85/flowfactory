@@ -24,6 +24,7 @@ class AgentConfigRepository:
         self.profile = Repository(session, AgentProfile)
         self.tool = Repository(session, AgentTool)
         self.beat_task = Repository(session, AgentBeatTask)
+        self.flow = Repository(session, AgentFlow)
 
     async def get_flow_by_code_version(
         self,

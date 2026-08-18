@@ -10,6 +10,7 @@ from service.cache.stores import (
     NotificationCacheStore,
     QuotaCacheStore,
     RateLimitCacheStore,
+    WorkflowCacheStore,
 )
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     "KnowledgeCacheStore",
     "ConversationCacheStore",
     "NotificationCacheStore",
+    "WorkflowCacheStore",
 ]

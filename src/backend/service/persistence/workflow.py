@@ -1,6 +1,7 @@
 """Workflow 域仓储。"""
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +41,15 @@ class WorkflowRepository:
                 RunSnapshot,
                 RunSnapshot.id == HitlPending.run_id,
             ).where(RunSnapshot.user_id == user_id)
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
+    async def list_expired_hitl(self, now: datetime) -> list[HitlPending]:
+        stmt = select(HitlPending).where(
+            HitlPending.status == "pending",
+            HitlPending.expires_at.is_not(None),
+            HitlPending.expires_at <= now,
+        )
         result = await self._session.scalars(stmt)
         return list(result.all())
 
