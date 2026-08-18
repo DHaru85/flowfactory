@@ -1,35 +1,35 @@
-"""Session 上下文与依赖注入。"""
+"""AsyncSession 上下文与依赖注入。"""
 
-from collections.abc import Generator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from service.database.engine import get_session_factory
+from service.database.engine import get_async_session_factory
 
 
-@contextmanager
-def session_scope() -> Generator[Session, None, None]:
+@asynccontextmanager
+async def session_scope() -> AsyncGenerator[AsyncSession, None]:
     """事务上下文：成功 commit，异常 rollback。"""
-    session = get_session_factory()()
+    session = get_async_session_factory()()
     try:
         yield session
-        session.commit()
+        await session.commit()
     except Exception:
-        session.rollback()
+        await session.rollback()
         raise
     finally:
-        session.close()
+        await session.close()
 
 
-def get_db_session() -> Generator[Session, None, None]:
-    """FastAPI 依赖：请求级 session。"""
-    session = get_session_factory()()
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI 依赖：请求级 AsyncSession。"""
+    session = get_async_session_factory()()
     try:
         yield session
-        session.commit()
+        await session.commit()
     except Exception:
-        session.rollback()
+        await session.rollback()
         raise
     finally:
-        session.close()
+        await session.close()

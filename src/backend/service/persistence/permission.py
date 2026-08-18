@@ -3,7 +3,7 @@
 import uuid
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.permission.models import (
     Asset,
@@ -20,7 +20,7 @@ from service.persistence.base import Repository
 class PermissionRepository:
     """权限与身份聚合仓储。"""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self._session = session
         self.user = Repository(session, User)
         self.organization = Repository(session, Organization)
@@ -29,15 +29,15 @@ class PermissionRepository:
         self.quota = Repository(session, Quota)
         self.refresh_token = Repository(session, RefreshToken)
 
-    def get_user_by_username(self, username: str) -> User | None:
+    async def get_user_by_username(self, username: str) -> User | None:
         stmt = select(User).where(User.username == username, User.deleted_at.is_(None))
-        return self._session.scalar(stmt)
+        return await self._session.scalar(stmt)
 
-    def get_asset_by_key(self, asset_type: str, asset_key: str) -> Asset | None:
+    async def get_asset_by_key(self, asset_type: str, asset_key: str) -> Asset | None:
         stmt = select(Asset).where(Asset.asset_type == asset_type, Asset.asset_key == asset_key)
-        return self._session.scalar(stmt)
+        return await self._session.scalar(stmt)
 
-    def get_quota(
+    async def get_quota(
         self,
         subject_type: str,
         subject_id: uuid.UUID,
@@ -50,12 +50,13 @@ class PermissionRepository:
             Quota.quota_type == quota_type,
             Quota.period == period,
         )
-        return self._session.scalar(stmt)
+        return await self._session.scalar(stmt)
 
-    def list_user_roles(self, user_id: uuid.UUID) -> list[Role]:
+    async def list_user_roles(self, user_id: uuid.UUID) -> list[Role]:
         stmt = (
             select(Role)
             .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == user_id)
         )
-        return list(self._session.scalars(stmt).all())
+        result = await self._session.scalars(stmt)
+        return list(result.all())

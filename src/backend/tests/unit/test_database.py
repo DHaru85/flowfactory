@@ -12,7 +12,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from data_schema import Base  # noqa: E402
 from service.database.bootstrap import verify_connection  # noqa: E402
-from service.database.engine import get_engine  # noqa: E402
+from service.database.engine import get_async_engine  # noqa: E402
 
 EXPECTED_TABLES = {
     "sys_organization",
@@ -68,17 +68,31 @@ EXPECTED_TABLES = {
 
 
 @pytest.mark.integration
-def test_database_connection() -> None:
-    assert verify_connection() is True
+@pytest.mark.asyncio
+async def test_database_connection() -> None:
+    assert await verify_connection() is True
 
 
 @pytest.mark.integration
-def test_expected_tables_exist() -> None:
-    engine = get_engine()
-    tables = set(inspect(engine).get_table_names())
+@pytest.mark.asyncio
+async def test_expected_tables_exist() -> None:
+    engine = get_async_engine()
+    async with engine.connect() as conn:
+        tables = await conn.run_sync(
+            lambda sync_conn: set(inspect(sync_conn).get_table_names())
+        )
     missing = EXPECTED_TABLES - tables
     assert not missing, f"缺少表: {missing}"
 
 
 def test_metadata_registers_models() -> None:
     assert len(Base.metadata.tables) >= len(EXPECTED_TABLES)
+
+
+def test_async_engine_pool_size_default() -> None:
+    from settings.config import get_settings
+
+    settings = get_settings()
+    assert settings.db_pool_size == 20
+    assert settings.db_max_overflow == 0
+    assert "psycopg_async" in settings.async_database_url

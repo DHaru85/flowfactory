@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     pg_database: str = "flowfactory"
     pg_admin_database: str = "postgres"
 
-    db_pool_size: int = 5
-    db_max_overflow: int = 10
+    db_pool_size: int = 20
+    db_max_overflow: int = 0
     db_echo: bool = False
 
     redis_host: str = "127.0.0.1"
@@ -40,11 +40,25 @@ class Settings(BaseSettings):
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     @property
-    def database_url(self) -> str:
+    def sync_database_url(self) -> str:
+        """同步连接 URL（Alembic、bootstrap 等）。"""
         return (
             f"postgresql+psycopg://{self.pg_user}:{self.pg_password}"
             f"@{self.pg_host}:{self.pg_port}/{self.pg_database}"
         )
+
+    @property
+    def async_database_url(self) -> str:
+        """异步连接 URL（FastAPI 运行时）。"""
+        return (
+            f"postgresql+psycopg_async://{self.pg_user}:{self.pg_password}"
+            f"@{self.pg_host}:{self.pg_port}/{self.pg_database}"
+        )
+
+    @property
+    def database_url(self) -> str:
+        """兼容 Alembic env：等同 sync_database_url。"""
+        return self.sync_database_url
 
     @property
     def admin_database_url(self) -> str:

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from service.persistence.agent import AgentConfigRepository
 from service.persistence.audit import AuditRepository
@@ -32,7 +32,7 @@ class Repositories:
     notification: NotificationRepository
 
 
-def get_repositories(session: Session) -> Repositories:
+def get_repositories(session: AsyncSession) -> Repositories:
     """工厂：从 Session 构建全部仓储。"""
     return Repositories(
         permission=PermissionRepository(session),

@@ -3,7 +3,7 @@
 import uuid
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.observability.models import (
     ObsLlmCall,
@@ -18,7 +18,7 @@ from service.persistence.base import Repository
 class ObservabilityRepository:
     """可观测性聚合仓储。"""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self._session = session
         self.trace = Repository(session, ObsTrace)
         self.span = Repository(session, ObsSpan)
@@ -26,18 +26,20 @@ class ObservabilityRepository:
         self.tool_invocation = Repository(session, ObsToolInvocation)
         self.prompt_snapshot = Repository(session, ObsPromptSnapshot)
 
-    def get_trace_by_otel_id(self, trace_id: str) -> ObsTrace | None:
+    async def get_trace_by_otel_id(self, trace_id: str) -> ObsTrace | None:
         stmt = select(ObsTrace).where(ObsTrace.trace_id == trace_id)
-        return self._session.scalar(stmt)
+        return await self._session.scalar(stmt)
 
-    def list_spans_by_trace(self, trace_id: str) -> list[ObsSpan]:
+    async def list_spans_by_trace(self, trace_id: str) -> list[ObsSpan]:
         stmt = select(ObsSpan).where(ObsSpan.trace_id == trace_id)
-        return list(self._session.scalars(stmt).all())
+        result = await self._session.scalars(stmt)
+        return list(result.all())
 
-    def list_llm_calls_by_run(self, run_id: uuid.UUID) -> list[ObsLlmCall]:
+    async def list_llm_calls_by_run(self, run_id: uuid.UUID) -> list[ObsLlmCall]:
         stmt = select(ObsLlmCall).where(ObsLlmCall.run_id == run_id)
-        return list(self._session.scalars(stmt).all())
+        result = await self._session.scalars(stmt)
+        return list(result.all())
 
-    def add_prompt_snapshots(self, snapshots: list[ObsPromptSnapshot]) -> None:
+    async def add_prompt_snapshots(self, snapshots: list[ObsPromptSnapshot]) -> None:
         self._session.add_all(snapshots)
-        self._session.flush()
+        await self._session.flush()

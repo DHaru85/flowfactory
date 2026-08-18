@@ -3,7 +3,7 @@
 import uuid
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.conversation.models import Conversation, Message
 from service.persistence.base import Repository
@@ -12,12 +12,12 @@ from service.persistence.base import Repository
 class ConversationRepository:
     """会话与消息聚合仓储。"""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self._session = session
         self.conversation = Repository(session, Conversation)
         self.message = Repository(session, Message)
 
-    def list_by_user(
+    async def list_by_user(
         self,
         user_id: uuid.UUID,
         *,
@@ -31,9 +31,10 @@ class ConversationRepository:
             .offset(offset)
             .limit(limit)
         )
-        return list(self._session.scalars(stmt).all())
+        result = await self._session.scalars(stmt)
+        return list(result.all())
 
-    def list_messages(
+    async def list_messages(
         self,
         conversation_id: uuid.UUID,
         *,
@@ -47,11 +48,12 @@ class ConversationRepository:
             .offset(offset)
             .limit(limit)
         )
-        return list(self._session.scalars(stmt).all())
+        result = await self._session.scalars(stmt)
+        return list(result.all())
 
-    def get_streaming_message(self, conversation_id: uuid.UUID) -> Message | None:
+    async def get_streaming_message(self, conversation_id: uuid.UUID) -> Message | None:
         stmt = select(Message).where(
             Message.conversation_id == conversation_id,
             Message.status == "streaming",
         )
-        return self._session.scalar(stmt)
+        return await self._session.scalar(stmt)

@@ -12,11 +12,13 @@ dependencies = [
     "loguru>=0.7.3",
     "pgvector>=0.3.6",
     "redis>=5.2.0",
+    "greenlet>=3.1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff>=0.8.0",
+    "pytest-asyncio>=0.25.0",
 ]
 
 [tool.ruff]
@@ -38,6 +40,7 @@ where = ["."]
 include = ["settings*", "data_schema*", "service*"]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 markers = [
     "integration: 需要外部 Postgres 等服务的集成测试",
 ]

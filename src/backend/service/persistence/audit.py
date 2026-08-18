@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.audit.models import AssetConsume, AssetObtain, AuditActivity
 from service.persistence.base import Repository
@@ -13,28 +13,28 @@ from service.persistence.base import Repository
 class AuditRepository:
     """审计与用量聚合仓储。"""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self._session = session
         self.obtain = Repository(session, AssetObtain)
         self.consume = Repository(session, AssetConsume)
         self.activity = Repository(session, AuditActivity)
 
-    def record_obtain(self, record: AssetObtain) -> AssetObtain:
+    async def record_obtain(self, record: AssetObtain) -> AssetObtain:
         self._session.add(record)
-        self._session.flush()
+        await self._session.flush()
         return record
 
-    def record_consume(self, record: AssetConsume) -> AssetConsume:
+    async def record_consume(self, record: AssetConsume) -> AssetConsume:
         self._session.add(record)
-        self._session.flush()
+        await self._session.flush()
         return record
 
-    def record_activity(self, activity: AuditActivity) -> AuditActivity:
+    async def record_activity(self, activity: AuditActivity) -> AuditActivity:
         self._session.add(activity)
-        self._session.flush()
+        await self._session.flush()
         return activity
 
-    def sum_consume_amount(
+    async def sum_consume_amount(
         self,
         subject_type: str,
         subject_id: uuid.UUID,
@@ -49,10 +49,10 @@ class AuditRepository:
         )
         if since is not None:
             stmt = stmt.where(AssetConsume.created_at >= since)
-        result = self._session.scalar(stmt)
+        result = await self._session.scalar(stmt)
         return int(result or 0)
 
-    def list_activity_by_user(
+    async def list_activity_by_user(
         self,
         user_id: uuid.UUID,
         *,
@@ -66,4 +66,5 @@ class AuditRepository:
             .offset(offset)
             .limit(limit)
         )
-        return list(self._session.scalars(stmt).all())
+        result = await self._session.scalars(stmt)
+        return list(result.all())

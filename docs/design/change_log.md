@@ -13,3 +13,4 @@
 | 2026.08.18 16:10 | src/backend | ORM 与 PG 数据层首版 | Permission/Conversation/Workflow 三域 ORM；service/database；Alembic 迁移；flowfactory 库已创建 |
 | 2026.08.18 17:11 | src/backend | Agent/Knowledge/Audit ORM 扩展 | 三域 ORM + service/persistence 仓储；pgvector 扩展；Alembic d8fe5039a9d1 |
 | 2026.08.18 17:20 | src/backend | 剩余映射层与数据层 | Graph/Security/Observability/Notification ORM；全域仓储与 factory；Redis cache；Alembic 00fe9d0489d1（共 49 表） |
+| 2026.08.18 17:30 | src/backend | PG 异步连接池 | create_async_engine + AsyncSession；pool_size 默认 20；仓储 async 适配 |
