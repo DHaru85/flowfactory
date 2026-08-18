@@ -1,0 +1,7 @@
+---
+globs: src/backend/**/*.py
+alwaysApply: false
+---
+
+# 执行过程中的一点小提示
+- **venv构建**: 安装新的python包到venv中时，使用 `https://mirrors.cloud.tencent.com/pypi/simple` 或 `https://mirrors.aliyun.com/pypi/simple` 作为源的索引路径参数，避免网络问题
