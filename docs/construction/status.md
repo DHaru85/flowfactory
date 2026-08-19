@@ -24,11 +24,13 @@
 | 服务层 / service/storage | 空闲 | ObjectStore + MinIO public GET |
 | 服务层 / service/auth | 空闲 | AuthService / PermissionService / LDAP 预留 |
 | 服务层 / service/tools | 空闲 | ToolExecutor 分发 builtin/http/mcp |
+| docs/design（服务说明文档） | 空闲 | service_layer.md 已落地 |
 
 未列出的模块视为 **空闲**。
 
 ## 施工简报
 
+- 2026-08-19 服务说明：新增 `docs/design/service_layer.md`，覆盖支撑设施与 8 个业务服务的使用、原理、协作流程与扩展指南。
 - 2026-08-19 知识检索：文本/MD/PDF 入库、可配置切片、bge-m3、RRF；pytest 已通过。
 - 2026-08-19 用户鉴权：本地 Argon2 + JWT/refresh；RBAC；LDAP 协议/`Ldap3Adapter`/登录 bind 回退/JIT 映射/同步任务已预留。ruff 通过，pytest 48 passed。
 - 2026-08-19 全链路可观测：TraceCollector flush `obs_*`；LangFuse 协议/Fake/SDK 预留；LLM usage；编译期节点包装。ruff 通过，pytest 57 passed。
