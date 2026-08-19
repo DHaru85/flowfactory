@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | 映射层 / data_schema（Permission） | 空闲 | ORM + 仓储已落地；User.roles 补 foreign_keys |
 | 映射层 / data_schema（Conversation） | 空闲 | ORM + 仓储已落地 |
-| 映射层 / data_schema（Workflow） | 空闲 | 含 `wf_child_run_pending` / `waiting_child` 设计；ORM 未迁 |
+| 映射层 / data_schema（Workflow） | 空闲 | `wf_child_run_pending` ORM + Alembic b7e2c91a4d03 |
 | 映射层 / data_schema（Agent） | 空闲 | FlowDefinitionDocument schema_version=1（仅文档） |
 | 映射层 / data_schema（Knowledge） | 空闲 | embedding 列 1024 维（bge-m3）；Alembic c4a91f2e7b10 |
 | 映射层 / data_schema（Audit） | 空闲 | ORM + 仓储已落地 |
@@ -13,26 +13,28 @@
 | 映射层 / data_schema（Observability） | 空闲 | ORM + Collector flush 仓储查询 |
 | 映射层 / data_schema（Notification） | 空闲 | ORM + 仓储已落地 |
 | 数据层 / service/database | 空闲 | 异步引擎改为线程局部，适配 Celery prefork/eager |
-| 数据层 / service/persistence | 空闲 | Agent 工具按 code 查询 |
+| 数据层 / service/persistence | 空闲 | 子图 pending 仓储 |
 | 数据层 / service/cache | 空闲 | Redis 仅热状态；SSE 帧不走 Redis |
 | 数据层 / settings | 空闲 | 含 stream_exchange / prefetch |
-| 服务层 / service/runtime | 空闲 | LLM stream；speaking 不经护栏 |
+| 服务层 / service/runtime | 空闲 | compile 双读 v0/v1；子图 waiting_child |
 | 服务层 / service/events | 空闲 | StreamEventBus Fake / AMQP ff.stream |
-| 服务层 / service/celery_app | 空闲 | fork 后 reset stream bus |
+| 服务层 / service/celery_app | 空闲 | 子图超时 tick expire_child_run_pending |
 | 服务层 / service/observability | 空闲 | TraceCollector / LangFuse 预留 / 脱敏 |
 | 服务层 / service/orchestration | 空闲 | Passthrough + Temporal 骨架 |
 | 服务层 / service/knowledge | 空闲 | 切片 / 向量化 / 检索 / 入库流水线 |
 | 服务层 / service/storage | 空闲 | ObjectStore + MinIO public GET |
 | 服务层 / service/auth | 空闲 | AuthService / PermissionService / LDAP 预留 |
 | 服务层 / service/tools | 空闲 | ToolExecutor 分发 builtin/http/mcp |
-| docs/design（服务说明文档） | 空闲 | 含 events 总线章 |
-| 应用层 / api | 空闲 | SSE：MQ sub → asyncio.Queue |
+| docs/design（服务说明文档） | 空闲 | runtime v1 可执行；仍不审 RBAC |
+| 应用层 / api | 空闲 | Studio Flow v1 配置态；SSE MQ sub → Queue |
 | 服务层 / service/guardrail | 空闲 | GuardrailEvaluator / PolicyDetector 预留 |
 
 未列出的模块视为 **空闲**。
 
 ## 施工简报
 
+- 2026-08-19 Runtime v1：`FlowRuntime.compile` 双读 v0/v1；按 NodeType 编译；`FlowBranch` 条件边；HITL 节点内 `interrupt()`；子图独立 Celery Run + `wf_child_run_pending` / `waiting_child`；超时/取消只取消子并 resume 父；取消父级联且不 resume。不调用 `PermissionService`。ruff 通过；相关 pytest 22 passed（单测）+ 集成 10 passed。
+- 2026-08-19 Studio：应用 `studio` 提供 Flow v1 草稿/发布/新草稿与 Profile/LLM/Tool 只读目录。不改 `FlowRuntime.compile`（v1 尚不可执行）；不调用 `PermissionService`（仅 JWT）。ruff 通过；相关 pytest 12 passed。
 - 2026-08-19 Flow 图定义：`agent_flow.definition` 规范为 schema_version=1（三槽 state、FlowNode discriminator、无条件边 + 条件分支、view 与逻辑分离）。子图为独立 Celery Run + `waiting_child`；子超时/取消只取消子并把 `SubgraphNodeResult` 还给父；取消父级联取消子。未改 Python / Alembic。
 - 2026-08-19 流式总线：RabbitMQ `ff.stream` 与 Celery 任务队列隔离、独立连接、保守背压；LLM `stream` 打字机；护栏只作用于持久化 state。SSE 消费有界 `asyncio.Queue`。ruff 通过；相关 pytest 15 passed。
 - 2026-08-19 服务说明：新增 `docs/design/service_layer.md`，覆盖支撑设施与业务服务的使用、原理、协作流程与扩展指南。

@@ -130,6 +130,10 @@ def set_chat_client_override(client: ChatCompletionClient | None) -> None:
     _override = client
 
 
+def has_chat_client_override() -> bool:
+    return _override is not None
+
+
 def get_chat_client() -> ChatCompletionClient:
     if _override is not None:
         return _override

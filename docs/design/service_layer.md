@@ -232,7 +232,7 @@ await svc.cancel(run_id)
 
 `StartRunRequest.definition` 可内联 `FlowDefinitionDocument`；为空则从 `agent_flow.definition` 读取。图状态**锁定三槽**：`messages`（append）/ `variables`（merge）/ `metadata`（merge）；不开放自定义顶层通道。业务字段只进 `variables`。`schema_version=1` 的图定义见 [data_schema_server.md](./data_schema_server.md)；现网松散 dict 为 version `0`。
 
-已实现节点 `kind`：`passthrough`、`interrupt`、`llm`。未知 kind **按 passthrough 处理并打 warning**，不会编译失败。
+已实现节点：v0 `kind`（`passthrough` / `interrupt` / `llm`）；v1 `NodeType`（`start` / `end` / `llm` / `tool` / `assign` / `hitl` / `subgraph` / `custom=passthrough`）。v0 未知 kind **按 passthrough 处理并打 warning**。v1 未知 `custom.handler_key` 编译失败。
 
 LLM：`get_chat_client()` → `OpenAICompatClient`（vLLM OpenAI 兼容）。测试用 `set_chat_client_override(FakeChatCompletionClient())`（见 `runtime/llm.py`）。
 
@@ -243,8 +243,8 @@ Checkpointer：`get_checkpointer()`，进程内 setup Postgres 表。
 - **调度单位**是 `Run` + `Thread` 快照（Postgres），不是 Celery 任务 ID。
 - **图状态**由 LangGraph + Postgres checkpointer 负责；Celery 只投递「执行/恢复」信封 `CeleryTaskEnvelope`。
 - **HITL**：图内 `interrupt()` 或 `interrupt_before` 导致当次 `ainvoke` 停住；服务层写 `wf_hitl_pending`，Run 置 `interrupted`。恢复走 `Command(resume=...)` 再入队。
-- **子图**：禁止同进程嵌套 compile。子 Flow 使用独立三槽 State 与独立 `langgraph_thread_id`，作为新 Celery Run；父留 checkpoint，snapshot 置 `waiting_child` 后释放 worker。子完成/失败或超时/取消后，将 `SubgraphNodeResult` 写入父三槽再 resume 父。超时或取消**只取消子**，父不自动取消。取消父则级联取消未完成子且不再 resume。设计表 `wf_child_run_pending`（实现轮再迁移）。
-- **Beat**：业务 cron 以 `agent_beat_task` 为准；Celery Beat 只跑固定 tick（`dispatch_beat_tasks`、`expire_hitl_pending`）。
+- **子图**：禁止同进程嵌套 compile。子 Flow 使用独立三槽 State 与独立 `langgraph_thread_id`，作为新 Celery Run；父留 checkpoint，snapshot 置 `waiting_child` 后释放 worker。子完成/失败或超时/取消后，将 `SubgraphNodeResult` 写入父三槽再 resume 父。超时或取消**只取消子**，父不自动取消。取消父则级联取消未完成子且不再 resume。表 `wf_child_run_pending` 已落地。
+- **Beat**：业务 cron 以 `agent_beat_task` 为准；Celery Beat 只跑固定 tick（`dispatch_beat_tasks`、`expire_hitl_pending`、`expire_child_run_pending`）。
 
 Run 状态：`pending` / `running` / `interrupted` / `waiting_child` / `completed` / `failed` / `cancelled`。
 
@@ -283,8 +283,8 @@ Beat：`dispatch_due_tasks` 读启用任务 → `croniter` 判断窗口 → `Age
 | 目标 | 做法 |
 | --- | --- |
 | 新节点 kind | 在 `flow.py` 增加编译分支；用 `wrap_graph_node` 包一层；更新常量 `NODE_*`；补单测。不要把重逻辑写进 Celery task。 |
-| 规划循环 / 工具节点 | 尚未落地。应新增 kind 并在节点内调 `ToolExecutor`，不要在 `execute_envelope` 里写死规划。 |
-| 子图节点 | **不要**把子 Flow 编进同一张 `StateGraph`。按设计文档起独立 Run + `waiting_child`；超时/取消回传 `SubgraphNodeResult`。 |
+| 规划循环 / 工具节点 | v1 `tool` 节点已调 `ToolExecutor`。规划循环 / SkillRuntime 尚未落地。 |
+| 子图节点 | **不要**把子 Flow 编进同一张 `StateGraph`。独立 Run + `waiting_child` + `wf_child_run_pending`；超时/取消回传 `SubgraphNodeResult`。 |
 | 换 LLM 供应商 | 实现 `ChatCompletionClient.complete`，`set_chat_client_override` 或改 `get_chat_client`。usage 通过 `observe_chat_completion` 交给 Collector。 |
 | 新 HITL 决策 | 扩展 `HitlResumeInput.decision` 需同步改 `hitl.apply_resume_decision` 与 Run 状态机。 |
 

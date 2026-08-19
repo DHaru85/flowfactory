@@ -26,6 +26,7 @@ from service.observability.collector import (
 from service.observability.schemas import TraceContext
 from service.persistence.factory import get_repositories
 from service.runtime.checkpointer import get_checkpointer
+from service.runtime.compile_v1 import apply_start_inject
 from service.runtime.constants import (
     CELERY_FAILURE,
     CELERY_STARTED,
@@ -33,12 +34,16 @@ from service.runtime.constants import (
     RUN_COMPLETED,
     RUN_FAILED,
     RUN_RUNNING,
+    RUN_WAITING_CHILD,
 )
-from service.runtime.flow import FlowRuntime
+from service.runtime.context import GraphExecContext, attach_graph_exec_ctx, reset_graph_exec_ctx
+from service.runtime.definition_v1 import FlowDefinitionV1
+from service.runtime.flow import FlowRuntime, parse_compile_document
 from service.runtime.hitl import create_pending
 from service.runtime.hot_state import touch_run_active
 from service.runtime.llm import get_chat_client
-from service.runtime.schemas import CeleryTaskEnvelope, FlowDefinitionDocument, RunStatePayload
+from service.runtime.scheduler import notify_parent_of_child, spawn_subgraph_child
+from service.runtime.schemas import CeleryTaskEnvelope, RunStatePayload, SubgraphNodeResult
 from settings.config import get_settings
 
 
@@ -52,12 +57,13 @@ def _strip_interrupt(result: dict[str, object]) -> dict[str, object]:
     return cleaned
 
 
-def _interrupt_info(snapshot: object) -> tuple[bool, str, str]:
+def _interrupt_info(snapshot: object) -> tuple[bool, str, str, dict[str, object]]:
     nxt = getattr(snapshot, "next", ()) or ()
     tasks = getattr(snapshot, "tasks", ()) or ()
     interrupted = bool(nxt)
     node_id = str(nxt[0]) if nxt else "unknown"
     prompt = "需要人工确认"
+    payload: dict[str, object] = {}
     for task in tasks:
         interrupts = getattr(task, "interrupts", ()) or ()
         if interrupts:
@@ -67,26 +73,31 @@ def _interrupt_info(snapshot: object) -> tuple[bool, str, str]:
                 node_id = str(name)
         for item in interrupts:
             value = getattr(item, "value", None)
-            if isinstance(value, dict) and value.get("prompt"):
-                prompt = str(value["prompt"])
+            if isinstance(value, dict):
+                payload = dict(value)
+                if value.get("prompt"):
+                    prompt = str(value["prompt"])
             elif isinstance(value, str) and value:
                 prompt = value
-    return interrupted, node_id, prompt
+    return interrupted, node_id, prompt, payload
 
 
 async def _load_definition(
     thread: ThreadSnapshot,
     flow_id: UUID,
     session: AsyncSession,
-) -> FlowDefinitionDocument:
+) -> dict[str, object]:
     raw = thread.context_payload.get("definition")
     if isinstance(raw, dict):
-        return FlowDefinitionDocument.model_validate(raw)
+        return dict(raw)
     repos = get_repositories(session)
     flow = await repos.agent.flow.get(flow_id)
     if flow is None:
         raise ValueError(f"Flow 定义不存在: {flow_id}")
-    return FlowDefinitionDocument.model_validate(flow.definition)
+    definition = flow.definition
+    if not isinstance(definition, dict):
+        raise ValueError(f"Flow 定义非法: {flow_id}")
+    return dict(definition)
 
 
 def _as_uuid(value: object) -> UUID | None:
@@ -152,12 +163,22 @@ async def execute_envelope(
     collector.start_trace("langgraph.run", trace_ctx)
     evaluator: GuardrailEvaluator | None = None
     evaluator_token = None
+    failed_run = None
     stream_ctx = StreamPublishContext(
         conversation_id=trace_ctx.conversation_id,
         run_id=run_row_id,
         message_id=_as_uuid(input_payload.metadata.get("assistant_message_id")),
     )
     stream_token = attach_stream_ctx(stream_ctx)
+    graph_token = attach_graph_exec_ctx(
+        GraphExecContext(
+            run_id=run_row_id,
+            user_id=trace_ctx.user_id,
+            conversation_id=trace_ctx.conversation_id,
+            flow_id=flow_id,
+            is_first_invoke=envelope.resume is None and envelope.child_resume is None,
+        )
+    )
     try:
         async with session_scope() as session:
             repos = get_repositories(session)
@@ -177,23 +198,78 @@ async def execute_envelope(
                 )
                 evaluator_token = attach_evaluator(evaluator)
 
+        parsed = parse_compile_document(definition)
+        graph_input = input_payload.to_graph_state()
+        if (
+            envelope.resume is None
+            and envelope.child_resume is None
+            and isinstance(parsed, FlowDefinitionV1)
+        ):
+            graph_input = apply_start_inject(graph_input, parsed)
+
         checkpointer = await get_checkpointer()
         runtime = FlowRuntime.compile(
-            definition,
+            parsed,
             flow_id=flow_id,
             checkpointer=checkpointer,
             chat_client=get_chat_client(),
         )
         config = _run_config(langgraph_thread_id)
         graph = runtime.graph
-        if envelope.resume is not None:
+        if envelope.child_resume is not None:
+            result = await graph.ainvoke(
+                Command(resume=envelope.child_resume.model_dump(mode="json")),
+                config,
+            )
+        elif envelope.resume is not None:
             resume_value: object = envelope.resume.user_input or envelope.resume.decision
             result = await graph.ainvoke(Command(resume=resume_value), config)
         else:
-            result = await graph.ainvoke(input_payload.to_graph_state(), config)
+            result = await graph.ainvoke(graph_input, config)
         snapshot = await graph.aget_state(config)
-        interrupted, node_id, prompt = _interrupt_info(snapshot)
+        interrupted, node_id, prompt, payload = _interrupt_info(snapshot)
         result_dict = dict(result) if isinstance(result, dict) else {"result": result}
+
+        if interrupted and payload.get("kind") == "subgraph_request":
+            async with session_scope() as session:
+                repos = get_repositories(session)
+                parent = await repos.workflow.run.get(run_row_id)
+                if parent is None:
+                    raise ValueError("Run 丢失")
+            spawned = await spawn_subgraph_child(parent=parent, interrupt_value=payload)
+            if isinstance(spawned, SubgraphNodeResult):
+                result = await graph.ainvoke(
+                    Command(resume=spawned.model_dump(mode="json")),
+                    config,
+                )
+                snapshot = await graph.aget_state(config)
+                interrupted, node_id, prompt, payload = _interrupt_info(snapshot)
+                result_dict = dict(result) if isinstance(result, dict) else {"result": result}
+            else:
+                async with session_scope() as session:
+                    repos = get_repositories(session)
+                    run = await repos.workflow.run.get(run_row_id)
+                    if run is None:
+                        raise ValueError("Run 丢失")
+                    if run.status not in {RUN_COMPLETED, RUN_FAILED, "cancelled"}:
+                        run.status = RUN_WAITING_CHILD
+                        touch_run_active(run.id, RUN_WAITING_CHILD)
+                    final_status = run.status
+                    if celery_task_id:
+                        rec = await session.scalar(
+                            select(CeleryTaskRecord).where(
+                                CeleryTaskRecord.celery_task_id == celery_task_id
+                            )
+                        )
+                        if rec is not None:
+                            rec.status = CELERY_SUCCESS
+                            rec.finished_at = datetime.now(UTC)
+                collector.end_trace("ok")
+                async with session_scope() as session:
+                    await collector.flush(session)
+                    if evaluator is not None:
+                        await evaluator.flush(session)
+                return {"run_id": str(run_row_id), "status": final_status}
 
         async with session_scope() as session:
             repos = get_repositories(session)
@@ -201,12 +277,20 @@ async def execute_envelope(
             if run is None:
                 raise ValueError("Run 丢失")
             if interrupted:
-                await create_pending(session, run=run, node_id=node_id, prompt=prompt)
+                on_reject = str(payload.get("on_reject") or "fail")
+                await create_pending(
+                    session,
+                    run=run,
+                    node_id=node_id,
+                    prompt=prompt,
+                    on_reject=on_reject,
+                )
             else:
                 run.status = RUN_COMPLETED
                 run.output_payload = _strip_interrupt(result_dict)
                 run.finished_at = datetime.now(UTC)
                 touch_run_active(run.id, RUN_COMPLETED)
+            completed_run = run
             if celery_task_id:
                 rec = await session.scalar(
                     select(CeleryTaskRecord).where(
@@ -217,6 +301,8 @@ async def execute_envelope(
                     rec.status = CELERY_SUCCESS
                     rec.finished_at = datetime.now(UTC)
 
+        if not interrupted:
+            await notify_parent_of_child(completed_run, status="completed")
         collector.end_trace("ok")
         async with session_scope() as session:
             await collector.flush(session)
@@ -237,6 +323,7 @@ async def execute_envelope(
                 run.status = RUN_FAILED
                 run.error_message = str(exc)
                 run.finished_at = datetime.now(UTC)
+            failed_run = run
             if celery_task_id:
                 rec = await session.scalar(
                     select(CeleryTaskRecord).where(
@@ -246,6 +333,8 @@ async def execute_envelope(
                 if rec is not None:
                     rec.status = CELERY_FAILURE
                     rec.finished_at = datetime.now(UTC)
+        if failed_run is not None:
+            await notify_parent_of_child(failed_run, status="failed", error=str(exc))
         touch_run_active(run_row_id, RUN_FAILED)
         collector.end_trace("error")
         try:
@@ -262,3 +351,4 @@ async def execute_envelope(
             reset_evaluator(evaluator_token)
         reset_collector(collector_token)
         reset_stream_ctx(stream_token)
+        reset_graph_exec_ctx(graph_token)

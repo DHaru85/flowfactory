@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -58,6 +58,36 @@ class HitlPending(Base, UUIDPrimaryKeyMixin):
         server_default="now()",
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ChildRunPending(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "wf_child_run_pending"
+    __table_args__ = (
+        Index("idx_wf_child_parent", "parent_run_id"),
+        Index("idx_wf_child_child", "child_run_id", unique=True),
+        Index(
+            "idx_wf_child_timeout",
+            "timeout_at",
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    parent_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    child_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    node_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    timeout_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resume_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default="now()",
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class CeleryTaskRecord(Base, UUIDPrimaryKeyMixin):

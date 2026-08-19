@@ -44,6 +44,7 @@ def test_new_domain_models_registered() -> None:
         "obs_prompt_snapshot",
         "notify_webhook_endpoint",
         "notify_delivery_log",
+        "wf_child_run_pending",
     }
     tables = set(Base.metadata.tables.keys())
     missing = expected - tables

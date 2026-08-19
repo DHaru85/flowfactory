@@ -1,6 +1,6 @@
 # FLowFactory 后端服务API说明文档
 
-本文描述 **2026-08-19 应用层首批接口**（FastAPI）。服务层能力见 [service_layer.md](./service_layer.md)；表结构见 [data_schema_server.md](./data_schema_server.md)。
+本文描述 **应用层接口**（FastAPI），含 2026-08-19 首批 `auth`/`conversation` 与 Studio 配置态。服务层能力见 [service_layer.md](./service_layer.md)；表结构见 [data_schema_server.md](./data_schema_server.md)。
 
 - 基址前缀：`/api/v1`（健康检查除外）。
 - 鉴权：除登录、刷新、`GET /health` 外，请求头 `Authorization: Bearer <access_token>`。
@@ -104,6 +104,48 @@ data: <json>
 
 `id` 由状态机递增，便于后续 Last-Event-ID。
 
-## 5. 本轮未暴露
+## 5. 应用 `studio`（`app_key=studio`）
 
-知识入库/检索、Flow/Agent CRUD、HITL、用户角色管理、限流、流式 token 级护栏。
+工作流编排配置态。需 access。本轮 **不调用** `PermissionService`（基础设施阶段，不审角色/资产）。`schema_version=1` 图经 `FlowRuntime.compile` 双读后可被 `WorkflowRuntimeService.start` / 会话入队执行。v0 内联 definition 仍可用。
+
+非法图：`400 definition_invalid`。非草稿修改：`400 flow_not_draft`。不存在：`404 flow_not_found`。`code+version` 冲突：`409 flow_code_version_conflict`。
+
+### `GET /api/v1/studio/profiles`
+
+只读。`id` / `code` / `name`。
+
+### `GET /api/v1/studio/llms`
+
+只读，仅 `is_active`。不下发 `config`。
+
+### `GET /api/v1/studio/tools`
+
+只读。`code` / `name` / `kind`。本轮不做工具写与规划循环。
+
+### `GET /api/v1/studio/flows/published-codes`
+
+已发布 `code` + 最大 `version`。
+
+### `GET /api/v1/studio/flows`
+
+查询：`offset` / `limit` / `status` / `code`。列表跳过非 v1 行。
+
+### `POST /api/v1/studio/flows`
+
+`code` / `name` / `profile_id`；`definition` 可空（写入 start→end 空图）。`profile_id` 无效：`400 profile_not_found`。
+
+### `GET /api/v1/studio/flows/{flow_id}`
+
+非 v1：`400 flow_definition_not_v1`。
+
+### `PATCH /api/v1/studio/flows/{flow_id}`
+
+仅 `draft`。
+
+### `POST /api/v1/studio/flows/{flow_id}/publish`
+
+同 `code` 其它 `published` 改为 `archived`。子图 `flow_code` 必须已发布且无 code 级环。
+
+### `POST /api/v1/studio/flows/{flow_id}/new-draft`
+
+仅 `published`。复制为 `version+1` 的 draft。

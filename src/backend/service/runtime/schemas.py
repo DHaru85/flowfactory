@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class RunStatePayload(BaseModel):
@@ -49,7 +49,16 @@ class HitlResumeOutput(BaseModel):
     resumed: bool
 
 
+class SubgraphNodeResult(BaseModel):
+    status: Literal["completed", "failed", "cancelled", "timeout"]
+    output: RunStatePayload = Field(default_factory=RunStatePayload)
+    error: str | None = None
+
+
 class FlowDefinitionDocument(BaseModel):
+    """schema_version=0（现网编译器）。v1 见 definition_v1.FlowDefinitionV1。"""
+
+    schema_version: int = 0
     nodes: list[dict[str, object]]
     edges: list[dict[str, object]]
     entry_point: str
@@ -63,7 +72,9 @@ class CeleryTaskEnvelope(BaseModel):
     thread_id: UUID
     langgraph_thread_id: str
     input_payload: RunStatePayload
+    resume_kind: Literal["hitl", "child"] | None = None
     resume: HitlResumeInput | None = None
+    child_resume: SubgraphNodeResult | None = None
 
 
 class BeatTaskTriggerPayload(BaseModel):
@@ -80,4 +91,18 @@ class StartRunRequest(BaseModel):
     conversation_id: UUID | None = None
     queue_name: str | None = None
     priority: int = 0
-    definition: FlowDefinitionDocument | None = None
+    definition: dict[str, object] | None = None
+
+    @field_validator("definition", mode="before")
+    @classmethod
+    def _coerce_definition(cls, value: object) -> dict[str, object] | None:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return dict(value)
+        if isinstance(value, BaseModel):
+            dumped = value.model_dump(mode="json")
+            if "schema_version" not in dumped and isinstance(value, FlowDefinitionDocument):
+                dumped["schema_version"] = 0
+            return dumped
+        raise TypeError("definition 必须为 dict 或 Flow 定义模型")

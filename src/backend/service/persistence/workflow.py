@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.workflow.models import (
     CeleryTaskRecord,
+    ChildRunPending,
     HitlPending,
     RunSnapshot,
     ThreadSnapshot,
@@ -23,6 +24,7 @@ class WorkflowRepository:
         self.run = Repository(session, RunSnapshot)
         self.thread = Repository(session, ThreadSnapshot)
         self.hitl = Repository(session, HitlPending)
+        self.child_pending = Repository(session, ChildRunPending)
         self.celery_task = Repository(session, CeleryTaskRecord)
 
     async def get_run_by_conversation(self, conversation_id: uuid.UUID) -> RunSnapshot | None:
@@ -65,7 +67,32 @@ class WorkflowRepository:
     async def list_active_runs(self, user_id: uuid.UUID) -> list[RunSnapshot]:
         stmt = select(RunSnapshot).where(
             RunSnapshot.user_id == user_id,
-            RunSnapshot.status.in_(("pending", "running", "interrupted")),
+            RunSnapshot.status.in_(
+                ("pending", "running", "interrupted", "waiting_child")
+            ),
+        )
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
+    async def get_child_pending_by_child(
+        self, child_run_id: uuid.UUID
+    ) -> ChildRunPending | None:
+        stmt = select(ChildRunPending).where(ChildRunPending.child_run_id == child_run_id)
+        return await self._session.scalar(stmt)
+
+    async def list_pending_children(self, parent_run_id: uuid.UUID) -> list[ChildRunPending]:
+        stmt = select(ChildRunPending).where(
+            ChildRunPending.parent_run_id == parent_run_id,
+            ChildRunPending.status == "pending",
+        )
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
+    async def list_expired_child_pending(self, now: datetime) -> list[ChildRunPending]:
+        stmt = select(ChildRunPending).where(
+            ChildRunPending.status == "pending",
+            ChildRunPending.timeout_at.is_not(None),
+            ChildRunPending.timeout_at <= now,
         )
         result = await self._session.scalars(stmt)
         return list(result.all())

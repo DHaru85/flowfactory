@@ -19,6 +19,7 @@ from service.runtime.constants import (
     NODE_LLM,
     NODE_PASSTHROUGH,
 )
+from service.runtime.definition_v1 import FlowDefinitionV1, parse_flow_definition
 from service.runtime.llm import ChatCompletionClient, ChatMessage, get_chat_client
 from service.runtime.schemas import FlowDefinitionDocument, RunStatePayload
 
@@ -147,11 +148,42 @@ class FlowRuntime:
     @classmethod
     def compile(
         cls,
-        document: FlowDefinitionDocument,
+        document: FlowDefinitionDocument | FlowDefinitionV1 | dict[str, object],
         *,
         flow_id: UUID,
         checkpointer: BaseCheckpointSaver,
         chat_client: ChatCompletionClient | None = None,
+    ) -> FlowRuntime:
+        parsed = parse_compile_document(document)
+        if isinstance(parsed, FlowDefinitionV1):
+            from service.runtime.compile_v1 import compile_v1_builder
+
+            client = chat_client or get_chat_client()
+            builder, _start_id, node_ids = compile_v1_builder(
+                parsed, chat_client=client
+            )
+            compiled = builder.compile(checkpointer=checkpointer, interrupt_before=[])
+            logger.info(
+                "编译 FlowRuntime v1 flow_id={} nodes={}",
+                flow_id,
+                node_ids,
+            )
+            return cls(flow_id=flow_id, graph=compiled, checkpointer=checkpointer)
+        return cls._compile_v0(
+            parsed,
+            flow_id=flow_id,
+            checkpointer=checkpointer,
+            chat_client=chat_client,
+        )
+
+    @classmethod
+    def _compile_v0(
+        cls,
+        document: FlowDefinitionDocument,
+        *,
+        flow_id: UUID,
+        checkpointer: BaseCheckpointSaver,
+        chat_client: ChatCompletionClient | None,
     ) -> FlowRuntime:
         client = chat_client or get_chat_client()
         builder: StateGraph[GraphState] = StateGraph(GraphState)
@@ -213,3 +245,24 @@ class FlowRuntime:
         config = {"configurable": {"thread_id": thread_id}}
         async for event in self.graph.astream(payload.to_graph_state(), config):  # type: ignore[union-attr]
             yield dict(event)
+
+
+def parse_compile_document(
+    document: FlowDefinitionDocument | FlowDefinitionV1 | dict[str, object],
+) -> FlowDefinitionDocument | FlowDefinitionV1:
+    if isinstance(document, FlowDefinitionV1):
+        return document
+    if isinstance(document, FlowDefinitionDocument):
+        return document
+    if document.get("schema_version") == 1:
+        return parse_flow_definition(document)
+    nodes = document.get("nodes")
+    first = nodes[0] if isinstance(nodes, list) and nodes else None
+    if (
+        "state" in document
+        and isinstance(first, dict)
+        and "type" in first
+        and "kind" not in first
+    ):
+        return parse_flow_definition(document)
+    return FlowDefinitionDocument.model_validate(document)

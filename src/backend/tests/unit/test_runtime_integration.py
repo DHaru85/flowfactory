@@ -168,3 +168,238 @@ async def test_postgres_checkpointer_setup_and_roundtrip() -> None:
     finally:
         await reset_checkpointer()
 
+
+async def _published_flows(*, child_hitl: bool = False) -> tuple[User, object, object]:
+    from data_schema.agent.models import AgentFlow, AgentLlm, AgentProfile
+    from service.runtime.definition_v1 import empty_flow_definition
+
+    suffix = uuid4().hex[:8]
+    if child_hitl:
+        child_def = {
+            "schema_version": 1,
+            "state": empty_flow_definition().state.model_dump(mode="json"),
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"inject": []}},
+                {
+                    "id": "ask",
+                    "type": "hitl",
+                    "data": {"prompt_template": "wait", "on_reject": "fail"},
+                },
+                {"id": "end", "type": "end", "data": {"output_channels": []}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "start", "target": "ask"},
+                {"id": "e2", "source": "ask", "target": "end"},
+            ],
+            "branches": [],
+        }
+    else:
+        child_def = empty_flow_definition().model_dump(mode="json")
+    parent_def = {
+        "schema_version": 1,
+        "state": child_def["state"],
+        "nodes": [
+            {"id": "start", "type": "start", "data": {"inject": []}},
+            {
+                "id": "sub",
+                "type": "subgraph",
+                "data": {
+                    "flow_code": f"child-{suffix}",
+                    "input_map": [],
+                    "output_map": [],
+                    "timeout_seconds": 60,
+                },
+            },
+            {"id": "end", "type": "end", "data": {"output_channels": []}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "start", "target": "sub"},
+            {"id": "e2", "source": "sub", "target": "end"},
+        ],
+        "branches": [],
+    }
+    async with session_scope() as session:
+        org = Organization(code=f"sg-{suffix}", name="sg", status="active")
+        session.add(org)
+        await session.flush()
+        user = User(
+            username=f"sg-user-{suffix}",
+            display_name="sg",
+            organization_id=org.id,
+            status="active",
+        )
+        session.add(user)
+        llm = AgentLlm(
+            code=f"sg-llm-{suffix}",
+            provider="local",
+            model_name="demo",
+            config={},
+            is_active=True,
+        )
+        session.add(llm)
+        await session.flush()
+        profile = AgentProfile(
+            code=f"sg-p-{suffix}",
+            name="p",
+            system_prompt="s",
+            default_llm_id=llm.id,
+            skill_ids=[],
+            owner_organization_id=org.id,
+        )
+        session.add(profile)
+        await session.flush()
+        child = AgentFlow(
+            code=f"child-{suffix}",
+            name="child",
+            version=1,
+            profile_id=profile.id,
+            definition=child_def,
+            status="published",
+        )
+        session.add(child)
+        parent = AgentFlow(
+            code=f"parent-{suffix}",
+            name="parent",
+            version=1,
+            profile_id=profile.id,
+            definition=parent_def,
+            status="published",
+        )
+        session.add(parent)
+        await session.flush()
+        session.expunge(user)
+        session.expunge(child)
+        session.expunge(parent)
+        return user, parent, child
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_v1_subgraph_waiting_child_then_resume() -> None:
+    set_checkpointer_override(new_memory_checkpointer())
+    set_chat_client_override(FakeChatCompletionClient("unused"))
+    try:
+        user, parent, _child = await _published_flows()
+        orch = PassthroughOrchestrator()
+        run_id = await orch.start_run(
+            StartRunRequest(
+                user_id=user.id,
+                flow_id=parent.id,
+                input_payload=RunStatePayload(),
+            )
+        )
+        async with session_scope() as session:
+            repos = get_repositories(session)
+            run = await repos.workflow.run.get(run_id)
+            assert run is not None
+            assert run.status == "completed"
+            assert run.output_payload is not None
+            variables = run.output_payload.get("variables")
+            assert isinstance(variables, dict)
+            bucket = variables.get("__subgraph__")
+            assert isinstance(bucket, dict)
+            assert bucket["sub"]["status"] == "completed"
+    finally:
+        set_chat_client_override(None)
+        set_checkpointer_override(None)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_cancel_parent_does_not_resume() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from data_schema.workflow.models import ChildRunPending
+    from service.runtime.constants import CHILD_PENDING, RUN_WAITING_CHILD
+    from service.runtime.scheduler import cancel_run
+
+    user = await _ensure_user()
+    async with session_scope() as session:
+        repos = get_repositories(session)
+        from data_schema.workflow.models import RunSnapshot, ThreadSnapshot
+
+        thread = ThreadSnapshot(queue_name="wf.run", priority=0, context_payload={})
+        await repos.workflow.thread.add(thread)
+        parent = RunSnapshot(
+            flow_id=uuid4(),
+            user_id=user.id,
+            status=RUN_WAITING_CHILD,
+            input_payload={},
+            thread_id=thread.id,
+            langgraph_thread_id="p",
+        )
+        await repos.workflow.run.add(parent)
+        child_thread = ThreadSnapshot(queue_name="wf.run", priority=0, context_payload={})
+        await repos.workflow.thread.add(child_thread)
+        child = RunSnapshot(
+            flow_id=uuid4(),
+            user_id=user.id,
+            status="running",
+            input_payload={},
+            thread_id=child_thread.id,
+            langgraph_thread_id="c",
+        )
+        await repos.workflow.run.add(child)
+        pending = ChildRunPending(
+            parent_run_id=parent.id,
+            child_run_id=child.id,
+            node_id="sub",
+            status=CHILD_PENDING,
+            timeout_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+        await repos.workflow.child_pending.add(pending)
+        parent_id = parent.id
+        child_id = child.id
+        pending_id = pending.id
+    await cancel_run(parent_id, notify_parent=False, cascade=True)
+    async with session_scope() as session:
+        repos = get_repositories(session)
+        parent = await repos.workflow.run.get(parent_id)
+        child = await repos.workflow.run.get(child_id)
+        pending = await repos.workflow.child_pending.get(pending_id)
+        assert parent is not None and parent.status == "cancelled"
+        assert child is not None and child.status == "cancelled"
+        assert pending is not None and pending.status == "parent_cancelled"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_child_timeout_resumes_parent() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from service.runtime.scheduler import expire_due_child_pending
+
+    set_checkpointer_override(new_memory_checkpointer())
+    set_chat_client_override(FakeChatCompletionClient("unused"))
+    try:
+        user, parent, _child = await _published_flows(child_hitl=True)
+        orch = PassthroughOrchestrator()
+        run_id = await orch.start_run(
+            StartRunRequest(
+                user_id=user.id,
+                flow_id=parent.id,
+                input_payload=RunStatePayload(),
+            )
+        )
+        async with session_scope() as session:
+            repos = get_repositories(session)
+            run = await repos.workflow.run.get(run_id)
+            assert run is not None
+            assert run.status == "waiting_child"
+            children = await repos.workflow.list_pending_children(run_id)
+            assert len(children) == 1
+            children[0].timeout_at = datetime.now(UTC) - timedelta(seconds=1)
+        count = await expire_due_child_pending()
+        assert count == 1
+        async with session_scope() as session:
+            repos = get_repositories(session)
+            run = await repos.workflow.run.get(run_id)
+            assert run is not None
+            assert run.status == "completed"
+            variables = (run.output_payload or {}).get("variables")
+            assert isinstance(variables, dict)
+            assert variables["__subgraph__"]["sub"]["status"] == "timeout"
+    finally:
+        set_chat_client_override(None)
+        set_checkpointer_override(None)
+

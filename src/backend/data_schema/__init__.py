@@ -49,6 +49,7 @@ from data_schema.permission.models import (
 from data_schema.security.models import GuardrailRule, PolicyViolation
 from data_schema.workflow.models import (
     CeleryTaskRecord,
+    ChildRunPending,
     HitlPending,
     RunSnapshot,
     ThreadSnapshot,
@@ -72,6 +73,7 @@ __all__ = [
     "RunSnapshot",
     "ThreadSnapshot",
     "HitlPending",
+    "ChildRunPending",
     "CeleryTaskRecord",
     "AgentProfile",
     "AgentLlm",

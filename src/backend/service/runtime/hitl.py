@@ -29,6 +29,7 @@ async def create_pending(
     run: RunSnapshot,
     node_id: str,
     prompt: str,
+    on_reject: str = "fail",
 ) -> HitlPending:
     cfg = get_settings()
     now = datetime.now(UTC)
@@ -36,6 +37,7 @@ async def create_pending(
         run_id=run.id,
         node_id=node_id,
         prompt=prompt,
+        resume_payload={"on_reject": on_reject},
         status=HITL_PENDING,
         expires_at=now + timedelta(seconds=cfg.hitl_default_ttl_seconds),
     )
@@ -64,9 +66,11 @@ async def apply_resume_decision(
         raise ValueError(f"Run 不存在: {pending.run_id}")
 
     now = datetime.now(UTC)
-    pending.resume_payload = hitl.model_dump(mode="json")
+    stored = pending.resume_payload if isinstance(pending.resume_payload, dict) else {}
+    on_reject = str(stored.get("on_reject") or "fail")
+    pending.resume_payload = {**hitl.model_dump(mode="json"), "on_reject": on_reject}
     pending.resolved_at = now
-    if hitl.decision == "reject":
+    if hitl.decision == "reject" and on_reject != "route":
         pending.status = HITL_REJECTED
         run.status = RUN_CANCELLED
         run.finished_at = now
@@ -74,8 +78,8 @@ async def apply_resume_decision(
         logger.info("HITL 拒绝 hitl_id={} run_id={}", pending.id, run.id)
         return pending, run, HitlResumeOutput(run_id=run.id, resumed=False)
 
-    pending.status = HITL_APPROVED
-    logger.info("HITL 批准 hitl_id={} run_id={}", pending.id, run.id)
+    pending.status = HITL_APPROVED if hitl.decision == "approve" else HITL_REJECTED
+    logger.info("HITL 恢复 hitl_id={} run_id={} decision={}", pending.id, run.id, hitl.decision)
     return pending, run, HitlResumeOutput(run_id=run.id, resumed=True)
 
 

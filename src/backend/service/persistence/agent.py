@@ -73,7 +73,44 @@ class AgentConfigRepository:
         result = await self._session.scalars(stmt)
         return list(result.all())
 
-    async def list_flows_by_profile(self, profile_id: uuid.UUID) -> list[AgentFlow]:
-        stmt = select(AgentFlow).where(AgentFlow.profile_id == profile_id)
+    async def list_flows(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        status: str | None = None,
+        code: str | None = None,
+    ) -> list[AgentFlow]:
+        stmt = select(AgentFlow)
+        if status is not None:
+            stmt = stmt.where(AgentFlow.status == status)
+        if code is not None:
+            stmt = stmt.where(AgentFlow.code == code)
+        stmt = stmt.order_by(AgentFlow.updated_at.desc()).offset(offset).limit(limit)
         result = await self._session.scalars(stmt)
         return list(result.all())
+
+    async def list_published_flow_summaries(self) -> list[tuple[str, int]]:
+        """每个 code 取已发布的最大 version。"""
+        stmt = (
+            select(AgentFlow.code, AgentFlow.version)
+            .where(AgentFlow.status == "published")
+            .order_by(AgentFlow.code, AgentFlow.version.desc())
+        )
+        rows = (await self._session.execute(stmt)).all()
+        latest: dict[str, int] = {}
+        for code, version in rows:
+            if code not in latest:
+                latest[code] = int(version)
+        return [(code, ver) for code, ver in latest.items()]
+
+    async def archive_published_siblings(self, code: str, except_id: uuid.UUID) -> None:
+        stmt = select(AgentFlow).where(
+            AgentFlow.code == code,
+            AgentFlow.status == "published",
+            AgentFlow.id != except_id,
+        )
+        result = await self._session.scalars(stmt)
+        for row in result.all():
+            row.status = "archived"
+

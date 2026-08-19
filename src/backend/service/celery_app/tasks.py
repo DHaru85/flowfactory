@@ -9,6 +9,7 @@ from service.celery_app.app import celery_app
 from service.runtime.async_utils import run_coro_factory
 from service.runtime.constants import (
     TASK_BEAT,
+    TASK_EXPIRE_CHILD,
     TASK_EXPIRE_HITL,
     TASK_INGEST,
     TASK_LDAP_SYNC,
@@ -66,6 +67,13 @@ def expire_hitl_pending() -> int:
             return await expire_due_pending(session)
 
     return run_coro_factory(_run)
+
+
+@celery_app.task(name=TASK_EXPIRE_CHILD)
+def expire_child_run_pending() -> int:
+    from service.runtime.scheduler import expire_due_child_pending
+
+    return run_coro_factory(expire_due_child_pending)
 
 
 @celery_app.task(name=TASK_INGEST)
