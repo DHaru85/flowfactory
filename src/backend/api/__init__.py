@@ -1,0 +1,1 @@
+"""应用层：FastAPI 宿主与按场景拆分的 Application。"""

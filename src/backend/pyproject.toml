@@ -34,6 +34,8 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.29.0",
     "langfuse>=2.60.0",
     "httpx>=0.28.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
     "jsonschema>=4.23.0",
     "mcp>=1.12.0",
 ]
@@ -60,7 +62,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["settings*", "data_schema*", "service*"]
+include = ["settings*", "data_schema*", "service*", "api*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

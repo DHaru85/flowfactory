@@ -26,12 +26,13 @@
 | 服务层 / service/auth | 空闲 | AuthService / PermissionService / LDAP 预留 |
 | 服务层 / service/tools | 空闲 | ToolExecutor 分发 builtin/http/mcp |
 | docs/design（服务说明文档） | 空闲 | service_layer.md 已落地 |
+| 应用层 / api | 空闲 | FastAPI 骨架；auth / conversation；SSE 协议状态机（进程内总线） |
 
 未列出的模块视为 **空闲**。
 
 ## 施工简报
 
-- 2026-08-19 内容护栏：GuardrailEvaluator 入口越狱/出口 PII 与敏感词；编译期节点包装；PolicyDetector 预留；违规 flush。ruff 通过，pytest 79 passed。
+- 2026-08-19 应用层首批：FastAPI 宿主与 Application 注册表；`auth` 登录/刷新/登出/me；`conversation` 会话与发消息（Fake runtime 可注入）；SSE 协议状态机 + 进程内总线。`api_reference_server.md` 已写本轮契约。ruff 通过；新增测试 7 passed。
 - 2026-08-19 服务说明：新增 `docs/design/service_layer.md`，覆盖支撑设施与业务服务的使用、原理、协作流程与扩展指南。
 - 2026-08-19 知识检索：文本/MD/PDF 入库、可配置切片、bge-m3、RRF；pytest 已通过。
 - 2026-08-19 用户鉴权：本地 Argon2 + JWT/refresh；RBAC；LDAP 协议/`Ldap3Adapter`/登录 bind 回退/JIT 映射/同步任务已预留。ruff 通过，pytest 48 passed。
