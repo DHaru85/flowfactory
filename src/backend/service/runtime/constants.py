@@ -5,6 +5,7 @@ TASK_RESUME = "service.celery_app.tasks.resume_langgraph_flow"
 TASK_BEAT = "service.celery_app.tasks.dispatch_beat_tasks"
 TASK_EXPIRE_HITL = "service.celery_app.tasks.expire_hitl_pending"
 TASK_INGEST = "service.celery_app.tasks.ingest_knowledge_doc"
+TASK_LDAP_SYNC = "service.celery_app.tasks.sync_ldap_directory"
 
 RUN_PENDING = "pending"
 RUN_RUNNING = "running"

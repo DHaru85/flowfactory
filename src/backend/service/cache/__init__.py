@@ -5,6 +5,7 @@ from service.cache.keys import CacheKeys
 from service.cache.stores import (
     AgentCacheStore,
     ConversationCacheStore,
+    GrantCacheStore,
     JwtCacheStore,
     KnowledgeCacheStore,
     NotificationCacheStore,
@@ -18,6 +19,7 @@ __all__ = [
     "get_redis_client",
     "reset_redis_client",
     "JwtCacheStore",
+    "GrantCacheStore",
     "RateLimitCacheStore",
     "QuotaCacheStore",
     "AgentCacheStore",

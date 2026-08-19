@@ -79,6 +79,25 @@ class Settings(BaseSettings):
 
     celery_queue_ingest: str = "kb.ingest"
 
+    jwt_secret: str = "flowfactory-dev-jwt-secret-change-me"
+    jwt_algorithm: str = "HS256"
+    jwt_access_ttl_seconds: int = 900
+    jwt_refresh_ttl_seconds: int = 1_209_600
+    jwt_issuer: str = "flowfactory"
+
+    ldap_enabled: bool = False
+    ldap_host: str = ""
+    ldap_port: int = 389
+    ldap_use_tls: bool = False
+    ldap_bind_dn: str = ""
+    ldap_bind_password: str = ""
+    ldap_user_search_base: str = ""
+    ldap_group_search_base: str = ""
+    ldap_user_filter: str = "(uid={username})"
+    ldap_username_attr: str = "uid"
+    ldap_default_org_code: str = ""
+    ldap_sync_beat_enabled: bool = False
+
     @property
     def postgres_dsn(self) -> str:
         """psycopg / LangGraph checkpointer 使用的 DSN。"""

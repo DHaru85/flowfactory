@@ -33,8 +33,43 @@ class JwtCacheStore:
         pipe.expire(key, ttl)
         pipe.execute()
 
+    def remove_session_refresh(self, user_id: uuid.UUID | str, refresh_jti: str) -> None:
+        self._client.srem(CacheKeys.jwt_session_index(user_id), refresh_jti)
+
     def clear_user_sessions(self, user_id: uuid.UUID | str) -> None:
         self._client.delete(CacheKeys.jwt_session_index(user_id))
+
+
+class GrantCacheStore:
+    """角色授权与 Asset 热缓存。"""
+
+    def __init__(self, client: redis.Redis) -> None:
+        self._client = client
+
+    def set_role_grants(self, role_id: uuid.UUID | str, payload: str, ttl: int = 300) -> None:
+        self._client.setex(CacheKeys.role_grants(role_id), ttl, payload)
+
+    def get_role_grants(self, role_id: uuid.UUID | str) -> str | None:
+        return self._client.get(CacheKeys.role_grants(role_id))
+
+    def invalidate_role_grants(self, role_id: uuid.UUID | str) -> None:
+        self._client.delete(CacheKeys.role_grants(role_id))
+
+    def set_asset(
+        self,
+        asset_type: str,
+        asset_key: str,
+        mapping: dict[str, str],
+        ttl: int = 300,
+    ) -> None:
+        key = CacheKeys.asset(asset_type, asset_key)
+        pipe = self._client.pipeline()
+        pipe.hset(key, mapping=mapping)
+        pipe.expire(key, ttl)
+        pipe.execute()
+
+    def get_asset(self, asset_type: str, asset_key: str) -> dict[str, str]:
+        return self._client.hgetall(CacheKeys.asset(asset_type, asset_key))
 
 
 class RateLimitCacheStore:

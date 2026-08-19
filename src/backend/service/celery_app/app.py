@@ -12,6 +12,21 @@ def create_celery_app() -> Celery:
         broker=cfg.celery_broker_url,
         backend="cache+memory://",
     )
+    beat_schedule = {
+        "dispatch-beat-tasks": {
+            "task": "service.celery_app.tasks.dispatch_beat_tasks",
+            "schedule": float(cfg.beat_tick_seconds),
+        },
+        "expire-hitl-pending": {
+            "task": "service.celery_app.tasks.expire_hitl_pending",
+            "schedule": float(cfg.beat_tick_seconds),
+        },
+    }
+    if cfg.ldap_sync_beat_enabled:
+        beat_schedule["sync-ldap-directory"] = {
+            "task": "service.celery_app.tasks.sync_ldap_directory",
+            "schedule": float(cfg.beat_tick_seconds),
+        }
     app.conf.update(
         task_always_eager=cfg.celery_eager,
         task_eager_propagates=True,
@@ -30,22 +45,14 @@ def create_celery_app() -> Celery:
         task_default_queue=cfg.celery_queue_run,
         task_create_missing_queue=True,
         broker_connection_retry_on_startup=True,
-        beat_schedule={
-            "dispatch-beat-tasks": {
-                "task": "service.celery_app.tasks.dispatch_beat_tasks",
-                "schedule": float(cfg.beat_tick_seconds),
-            },
-            "expire-hitl-pending": {
-                "task": "service.celery_app.tasks.expire_hitl_pending",
-                "schedule": float(cfg.beat_tick_seconds),
-            },
-        },
+        beat_schedule=beat_schedule,
         task_routes={
             "service.celery_app.tasks.run_langgraph_flow": {"queue": cfg.celery_queue_run},
             "service.celery_app.tasks.resume_langgraph_flow": {"queue": cfg.celery_queue_run},
             "service.celery_app.tasks.dispatch_beat_tasks": {"queue": cfg.celery_queue_beat},
             "service.celery_app.tasks.expire_hitl_pending": {"queue": cfg.celery_queue_beat},
             "service.celery_app.tasks.ingest_knowledge_doc": {"queue": cfg.celery_queue_ingest},
+            "service.celery_app.tasks.sync_ldap_directory": {"queue": cfg.celery_queue_beat},
         },
     )
     return app
