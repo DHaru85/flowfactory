@@ -7,7 +7,13 @@ from loguru import logger
 
 from service.celery_app.app import celery_app
 from service.runtime.async_utils import run_coro_factory
-from service.runtime.constants import TASK_BEAT, TASK_EXPIRE_HITL, TASK_RESUME, TASK_RUN
+from service.runtime.constants import (
+    TASK_BEAT,
+    TASK_EXPIRE_HITL,
+    TASK_INGEST,
+    TASK_RESUME,
+    TASK_RUN,
+)
 from service.runtime.schemas import CeleryTaskEnvelope
 
 
@@ -59,3 +65,27 @@ def expire_hitl_pending() -> int:
             return await expire_due_pending(session)
 
     return run_coro_factory(_run)
+
+
+@celery_app.task(name=TASK_INGEST)
+def ingest_knowledge_doc(payload: dict[str, object]) -> dict[str, object]:
+    from service.database.session import session_scope
+    from service.knowledge.ingestion import IngestionPipeline
+    from service.knowledge.schemas import IngestDocumentRequest
+
+    request = IngestDocumentRequest.model_validate(payload)
+
+    async def _run() -> dict[str, object]:
+        async with session_scope() as session:
+            pipeline = IngestionPipeline(session, request)
+            stats = await pipeline.run()
+            return stats.model_dump(mode="json")
+
+    result = run_coro_factory(_run)
+    logger.info(
+        "知识入库 job={} skipped={} chunks={}",
+        request.job_id,
+        result.get("skipped"),
+        result.get("chunks"),
+    )
+    return result

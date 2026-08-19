@@ -15,3 +15,4 @@
 | 2026.08.18 17:20 | src/backend | 剩余映射层与数据层 | Graph/Security/Observability/Notification ORM；全域仓储与 factory；Redis cache；Alembic 00fe9d0489d1（共 49 表） |
 | 2026.08.18 17:30 | src/backend | PG 异步连接池 | create_async_engine + AsyncSession；pool_size 默认 20；仓储 async 适配 |
 | 2026.08.18 18:00 | src/backend | 工作流运行时环境 | Celery eager 调度；LangGraph + Postgres checkpointer；vLLM OpenAI 兼容 LLM；HITL/Beat；Temporal 骨架 |
+| 2026.08.19 10:30 | src/backend | 知识检索基础设施 | 文本/MD/PDF 可配置切片；bge-m3 1024 维；pgvector+tsvector+RRF；MinIO public GET；ONNX 重排路径可配 |

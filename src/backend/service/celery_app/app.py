@@ -45,6 +45,7 @@ def create_celery_app() -> Celery:
             "service.celery_app.tasks.resume_langgraph_flow": {"queue": cfg.celery_queue_run},
             "service.celery_app.tasks.dispatch_beat_tasks": {"queue": cfg.celery_queue_beat},
             "service.celery_app.tasks.expire_hitl_pending": {"queue": cfg.celery_queue_beat},
+            "service.celery_app.tasks.ingest_knowledge_doc": {"queue": cfg.celery_queue_ingest},
         },
     )
     return app

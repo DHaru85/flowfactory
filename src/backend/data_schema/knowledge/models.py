@@ -19,8 +19,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from data_schema.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
-# 默认向量维度，与常见 embedding 模型对齐；可按 collection.embedding_model 调整写入逻辑
-DEFAULT_EMBEDDING_DIM = 1536
+# 默认向量维度，与 bge-m3 稠密向量对齐
+DEFAULT_EMBEDDING_DIM = 1024
 
 
 class FileStorageObject(Base, UUIDPrimaryKeyMixin):
