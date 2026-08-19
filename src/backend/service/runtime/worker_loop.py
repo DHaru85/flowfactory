@@ -12,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.workflow.models import CeleryTaskRecord, ThreadSnapshot
 from service.database.session import session_scope
+from service.events.context import StreamPublishContext, attach_stream_ctx, reset_stream_ctx
+from service.events.factory import get_stream_bus
+from service.events.schemas import run_lifecycle_event
 from service.guardrail.context import attach_evaluator, reset_evaluator
 from service.guardrail.evaluator import GuardrailEvaluator
 from service.guardrail.load import load_rule_specs
@@ -86,6 +89,27 @@ async def _load_definition(
     return FlowDefinitionDocument.model_validate(flow.definition)
 
 
+def _as_uuid(value: object) -> UUID | None:
+    if value is None:
+        return None
+    try:
+        return UUID(str(value))
+    except ValueError:
+        return None
+
+
+async def _publish_lifecycle(name: str, ctx: StreamPublishContext) -> None:
+    if ctx.conversation_id is None:
+        return
+    try:
+        await get_stream_bus().publish(
+            ctx.conversation_id,
+            run_lifecycle_event(name, run_id=ctx.run_id, message_id=ctx.message_id),
+        )
+    except Exception:
+        logger.warning("生命周期事件投递失败 event={} run_id={}", name, ctx.run_id)
+
+
 async def execute_envelope(
     envelope: CeleryTaskEnvelope,
     *,
@@ -128,6 +152,12 @@ async def execute_envelope(
     collector.start_trace("langgraph.run", trace_ctx)
     evaluator: GuardrailEvaluator | None = None
     evaluator_token = None
+    stream_ctx = StreamPublishContext(
+        conversation_id=trace_ctx.conversation_id,
+        run_id=run_row_id,
+        message_id=_as_uuid(input_payload.metadata.get("assistant_message_id")),
+    )
+    stream_token = attach_stream_ctx(stream_ctx)
     try:
         async with session_scope() as session:
             repos = get_repositories(session)
@@ -192,6 +222,8 @@ async def execute_envelope(
             await collector.flush(session)
             if evaluator is not None:
                 await evaluator.flush(session)
+        if not interrupted:
+            await _publish_lifecycle("run_completed", stream_ctx)
         return {
             "run_id": str(run_row_id),
             "status": "interrupted" if interrupted else "completed",
@@ -223,8 +255,10 @@ async def execute_envelope(
                     await evaluator.flush(session)
         except Exception:
             logger.exception("观测/护栏 flush 失败 run_id={}", envelope.run_id)
+        await _publish_lifecycle("run_failed", stream_ctx)
         raise
     finally:
         if evaluator_token is not None:
             reset_evaluator(evaluator_token)
         reset_collector(collector_token)
+        reset_stream_ctx(stream_token)

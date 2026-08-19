@@ -5,7 +5,8 @@
 - 基址前缀：`/api/v1`（健康检查除外）。
 - 鉴权：除登录、刷新、`GET /health` 外，请求头 `Authorization: Bearer <access_token>`。
 - 错误体：`{"code": string, "message": string}`。
-- 本轮**无限流**；SSE **不接** Celery worker 出流（进程内总线 + 协议状态机）。
+- 本轮无限流 HTTP。SSE 中继为 RabbitMQ topic `ff.stream`（与 Celery 任务队列隔离）；Redis 只做断线缓冲与在场登记。
+- 流式 `speaking` **不经内容护栏**；护栏作用于节点完成后的持久化 state。
 
 ## 1. 健康检查
 
@@ -77,7 +78,7 @@
 
 ### `GET /api/v1/conversations/{conversation_id}/events`
 
-`Content-Type: text/event-stream`。连接后状态机 `subscribe`，首帧 `connected`；之后消费进程内总线。约 15s 无事件发送 SSE 注释 keepalive。客户端断开后 `unsubscribe`。
+`Content-Type: text/event-stream`。连接后状态机 `subscribe`，首帧 `connected`。服务层对 `ff.stream` 做 MQ subscribe，帧进入该连接有界 `asyncio.Queue`，生成器只消费 Queue。约 15s 无事件发送 keepalive。`speaking` 可从 `subscribed` 直接进入 `run_active`（避免丢失 `run_submitted`）。
 
 ## 4. SSE 流协议状态机
 
@@ -87,7 +88,7 @@
 | --- | --- | --- |
 | `connected` | 仅由 `subscribe` 产生 | `data.state` |
 | `run_submitted` | subscribed / completed / failed | `data.run_id` / `message_id` |
-| `speaking` / `reasoning` / `tool_calling` / `step_running` / `subagent_running` | run_active | 与 data_schema 帧字段一致；本轮由总线注入，非 worker 出流 |
+| `speaking` / `reasoning` / `tool_calling` / `step_running` / `subagent_running` | subscribed 或 run_active | worker 流式出词走 `speaking`；token 不经护栏 |
 | `run_completed` / `run_failed` | run_active | 控制事件 |
 
 非法转移：状态机抛出 `StreamProtocolError`；SSE 连接上记录 warning 并丢弃该帧，不断开。
@@ -105,4 +106,4 @@ data: <json>
 
 ## 5. 本轮未暴露
 
-知识入库/检索、Flow/Agent CRUD、HITL、用户角色管理、限流、Redis 跨进程中继、LLM token 增量。
+知识入库/检索、Flow/Agent CRUD、HITL、用户角色管理、限流、流式 token 级护栏。

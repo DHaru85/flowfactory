@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from time import perf_counter
 from typing import Protocol
 
@@ -17,6 +18,9 @@ ChatMessage = dict[str, str]
 class ChatCompletionClient(Protocol):
     async def complete(self, messages: list[ChatMessage]) -> str:
         """根据消息列表生成助手回复。"""
+
+    def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
+        """token 增量；不经内容护栏。"""
 
 
 class OpenAICompatClient:
@@ -37,34 +41,48 @@ class OpenAICompatClient:
         )
 
     async def complete(self, messages: list[ChatMessage]) -> str:
+        parts: list[str] = []
+        async for delta in self.stream(messages):
+            parts.append(delta)
+        return "".join(parts)
+
+    async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
         payload = messages or [{"role": "user", "content": ""}]
-        logger.debug("调用 LLM model={} messages={}", self._model, len(payload))
+        logger.debug("流式调用 LLM model={} messages={}", self._model, len(payload))
         started = perf_counter()
+        prompt_tokens = 0
+        completion_tokens = 0
         try:
             response = await self._client.chat.completions.create(
                 model=self._model,
                 messages=payload,  # type: ignore[arg-type]
+                stream=True,
             )
+            async for chunk in response:
+                usage = getattr(chunk, "usage", None)
+                if usage is not None:
+                    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+                    completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+                choices = chunk.choices
+                if not choices:
+                    continue
+                delta = choices[0].delta
+                content = getattr(delta, "content", None)
+                if content:
+                    yield content
         except Exception as exc:
             latency_ms = int((perf_counter() - started) * 1000)
             observe_chat_completion(
                 payload,
                 model=self._model,
-                prompt_tokens=0,
-                completion_tokens=0,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
                 latency_ms=latency_ms,
                 status="error",
                 error_message=str(exc),
             )
             raise
         latency_ms = int((perf_counter() - started) * 1000)
-        usage = response.usage
-        prompt_tokens = int(usage.prompt_tokens) if usage and usage.prompt_tokens else 0
-        completion_tokens = (
-            int(usage.completion_tokens) if usage and usage.completion_tokens else 0
-        )
-        choice = response.choices[0].message
-        content = choice.content or ""
         observe_chat_completion(
             payload,
             model=self._model,
@@ -73,18 +91,27 @@ class OpenAICompatClient:
             latency_ms=latency_ms,
             status="ok",
         )
-        return content
 
 
 class FakeChatCompletionClient:
     """单元测试替身。"""
 
-    def __init__(self, reply: str = "ok") -> None:
+    def __init__(self, reply: str = "ok", chunks: list[str] | None = None) -> None:
         self.reply = reply
+        self.chunks = chunks
         self.calls: list[list[ChatMessage]] = []
 
     async def complete(self, messages: list[ChatMessage]) -> str:
+        parts: list[str] = []
+        async for delta in self.stream(messages):
+            parts.append(delta)
+        return "".join(parts)
+
+    async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
         self.calls.append(messages)
+        pieces = self.chunks if self.chunks is not None else [self.reply]
+        for piece in pieces:
+            yield piece
         observe_chat_completion(
             messages,
             model="fake",
@@ -93,7 +120,6 @@ class FakeChatCompletionClient:
             latency_ms=0,
             status="ok",
         )
-        return self.reply
 
 
 _override: ChatCompletionClient | None = None

@@ -18,6 +18,11 @@ def rebuild_process_clients(**_kwargs: object) -> None:
     from service.guardrail.context import reset_guardrail_context
 
     reset_guardrail_context()
+    from service.events.context import reset_stream_context
+    from service.events.factory import reset_stream_bus
+
+    reset_stream_bus()
+    reset_stream_context()
 
     async def _reset() -> None:
         from service.database.engine import dispose_engines
@@ -28,4 +33,4 @@ def rebuild_process_clients(**_kwargs: object) -> None:
     from service.runtime.async_utils import run_coro_factory
 
     run_coro_factory(_reset)
-    logger.info("Celery worker 子进程已重建 DB/Redis/checkpointer/观测 客户端")
+    logger.info("Celery worker 子进程已重建 DB/Redis/checkpointer/观测/流式总线 客户端")

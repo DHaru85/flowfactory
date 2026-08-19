@@ -2,7 +2,7 @@
 
 本文档整理 `src/backend/service/` 现状：各服务如何使用、原理、工作与协作流程，以及如何按现有模式扩展。表结构、列级字段与仓储方法以 [data_schema_server.md](./data_schema_server.md) 为准，此处不重复展开。
 
-应用层 FastAPI / SSE **尚未作为本轮服务的调用方落地**；下文「使用说明」面向后续应用与其它服务，入口以 Python 类型为准。环境变量前缀为 `FLOWFACTORY_`（见 `settings/config.py`）。
+应用层 FastAPI / SSE 已接入 `get_stream_bus()`。环境变量前缀为 `FLOWFACTORY_`。
 
 ## 1. 概述
 
@@ -11,7 +11,7 @@
 | 分类 | 包 | 说明 |
 | --- | --- | --- |
 | 数据层支撑 | `database` / `persistence` / `cache` | 连接池、仓储、Redis 热状态；业务服务禁止绕过仓储直接拼 SQL |
-| 业务服务 | `runtime` / `celery_app` / `orchestration` / `auth` / `knowledge` / `storage` / `tools` / `observability` / `guardrail` | 工作流、调度、鉴权、检索、对象、工具、观测、内容护栏 |
+| 业务服务 | `runtime` / `celery_app` / `orchestration` / `auth` / `knowledge` / `storage` / `tools` / `observability` / `guardrail` / `events` | 工作流、调度、鉴权、检索、对象、工具、观测、护栏、流式总线 |
 
 配置集中在 `settings.config.Settings`。测试与 worker fork 后调用 `reset_settings()` 清缓存。
 
@@ -31,6 +31,7 @@
 | `service.tools` | `ToolExecutor` | agent 仓储、knowledge、MCP/HTTP | `tool_http_*` |
 | `service.observability` | `TraceCollector` | `obs_*` 仓储、LangFuse 工厂 | `otel_*` / `langfuse_*` / `obs_redact_*` |
 | `service.guardrail` | `GuardrailEvaluator` | security 仓储、PolicyDetector | `guardrail_*` |
+| `service.events` | `get_stream_bus()` | aio-pika / Fake | `stream_*` / `rabbitmq_url` |
 
 尚未作为独立服务包落地（仓储已有、服务层未封装）：领域图运行时、限流策略服务、审计写入门面、通知投递。需要时在对应仓储上按第 13 章约定新增包，不要塞进 `runtime`。
 
@@ -52,7 +53,9 @@ flowchart TB
   KB["RetrievalService / IngestionPipeline"]
   Store["ObjectStore"]
   Obs["TraceCollector"]
+  Events["StreamEventBus"]
   Guard["GuardrailEvaluator"]
+  Events["StreamEventBus"]
   Repo["get_repositories"]
   Redis["CacheStore"]
 
@@ -67,8 +70,11 @@ flowchart TB
   Env --> Flow
   Env --> Obs
   Env --> Guard
+  Env --> Events
   Flow --> LLM
   Flow --> HITL
+  Flow --> Events
+  App --> Events
   Tools --> KB
   KB --> Store
   KB --> Repo
@@ -79,7 +85,7 @@ flowchart TB
   Obs --> Repo
 ```
 
-长任务一律进 Celery（图 run / HITL 过期 / Beat / 知识入库 / LDAP 同步骨架）。FastAPI 进程只应持短请求与未来的 SSE 订阅。
+长任务一律进 Celery（图 run / HITL 过期 / Beat / 知识入库 / LDAP 同步骨架）。FastAPI 只接短请求与 SSE。流式帧走 RabbitMQ `ff.stream`，不走 Redis。
 
 ## 4. 支撑设施
 
@@ -157,7 +163,7 @@ store.blacklist_jti(jti, ttl_seconds)
 
 **原理**
 
-Redis 只承载热状态与短 TTL：JWT 黑名单、授权缓存、Beat/入库锁、Run 活跃标记。权威状态在 Postgres。
+Redis 只承载热状态与短 TTL：JWT 黑名单、授权缓存、Beat/入库锁、Run 活跃标记、**断线文本缓冲**、SSE **在场**集合。权威状态在 Postgres。**禁止**用 Redis Pub/Sub、List 或 Stream 投递 SSE 帧。
 
 **协作**
 
@@ -168,10 +174,38 @@ Redis 只承载热状态与短 TTL：JWT 黑名单、授权缓存、Beat/入库�
 | Beat | `agent:beat:lock:{id}` |
 | 入库 | `kb:ingest:lock` / `progress` |
 | Run worker | `wf:run:active` / `wf:hitl:notify` |
+| 会话 | `conv:stream:{message_id}` 缓冲；`conv:sse:subscribers` 仅 connection id |
 
 **扩展**
 
 新 key 先加 `CacheKeys` 静态方法，再在对应 Store 封装 get/set/lock。禁止在业务代码里手写 `f"auth:{...}"`。
+
+### 4.4 流式事件总线（`service.events`）
+
+**使用说明**
+
+```python
+from service.events.factory import get_stream_bus, set_stream_bus_override
+from service.events.schemas import speaking_event
+
+await get_stream_bus().publish(conversation_id, speaking_event(delta="你", message_id=mid))
+```
+
+测试注入 `FakeStreamEventBus`：`set_stream_bus_override`。无 `FLOWFACTORY_RABBITMQ_URL` 时工厂返回 Fake。
+
+**原理**
+
+- Celery 任务队列（`wf.*` / `kb.*`）与流式 topic exchange `ff.stream` **隔离**；流式使用**独立 AMQP 连接**。
+- 流式背压保守：小 prefetch、帧非持久、本地 `asyncio.Queue` 满则丢帧；publish 失败不导致 Run 失败。优先保护任务提交通道。
+- 应用层 SSE 只 `await Queue.get()`，不在生成器里阻塞 AMQP。
+
+**工作流程**
+
+worker llm 节点 `stream` → publish `speaking`（不经护栏）→ 节点返回完整文本 → `wrap_guardrail_node` 对持久化 state 做出口检查 → checkpoint。uvicorn bind `conv.{id}` → put Queue → 状态机 → HTTP SSE。
+
+**扩展**
+
+新事件名加在 `StreamEvent.event` 与应用层状态机；不要把帧写进 Celery 任务体或 Redis。
 
 ---
 
@@ -738,6 +772,7 @@ sequenceDiagram
 | LangFuse | `get_langfuse_reporter` |
 | 护栏远程策略 | `get_policy_detector` |
 | 外层编排 | `get_orchestrator`（无 override，按配置分支） |
+| 流式事件 | `get_stream_bus` |
 
 配置：只加 `Settings` 字段 + `FLOWFACTORY_` 环境变量，不在代码里写死集群地址（文档中的默认 IP 仅反映当前开发默认值）。
 
@@ -754,4 +789,4 @@ sequenceDiagram
 | [change_log.md](./change_log.md) | 设计与实现变更记录 |
 | `docs/plan/2026-08-18-*`、`2026-08-19-*` | 各服务落地时的锁定方案与验收标准 |
 
-本文档描述 **2026-08-19 内容护栏完成之后** 的代码事实。规划图、SSE、限流、领域图运行时若已实现，以代码与更新后的 change_log 为准，并应修订本章。
+本文档描述 **2026-08-19 流式 RabbitMQ 总线与 LLM stream 之后** 的代码事实。

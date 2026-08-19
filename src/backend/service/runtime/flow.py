@@ -68,7 +68,11 @@ def _make_llm_node(client: ChatCompletionClient, extra_system: str | None) -> No
         messages = _as_chat_messages(state)
         if extra_system:
             messages = [{"role": "system", "content": extra_system}, *messages]
-        content = await client.complete(messages)
+        parts: list[str] = []
+        async for delta in client.stream(messages):
+            parts.append(delta)
+            await _publish_speaking(delta)
+        content = "".join(parts)
         new_messages: list[dict[str, object]] = [
             *list(state.get("messages") or []),
             {"role": "assistant", "content": content},
@@ -83,6 +87,33 @@ def _make_llm_node(client: ChatCompletionClient, extra_system: str | None) -> No
         return {"messages": new_messages, "variables": variables}
 
     return _node
+
+
+async def _publish_speaking(delta: str) -> None:
+    """流式增量不经护栏；失败不影响图执行。"""
+    from service.events.context import get_stream_ctx
+    from service.events.factory import get_stream_bus
+    from service.events.schemas import speaking_event
+
+    ctx = get_stream_ctx()
+    if ctx is None or ctx.conversation_id is None or ctx.message_id is None:
+        return
+    if not delta:
+        return
+    try:
+        await get_stream_bus().publish(
+            ctx.conversation_id,
+            speaking_event(delta=delta, message_id=ctx.message_id),
+        )
+    except Exception:
+        logger.warning("speaking 投递失败 run_id={}", ctx.run_id)
+    try:
+        from service.cache.client import get_redis_client
+        from service.cache.stores import ConversationCacheStore
+
+        ConversationCacheStore(get_redis_client()).append_stream_delta(ctx.message_id, delta)
+    except Exception:
+        logger.debug("流式 Redis 缓冲写入跳过")
 
 
 def _node_kind(spec: dict[str, object]) -> str:

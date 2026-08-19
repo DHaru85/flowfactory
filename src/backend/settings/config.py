@@ -79,6 +79,11 @@ class Settings(BaseSettings):
 
     celery_queue_ingest: str = "kb.ingest"
 
+    stream_exchange: str = "ff.stream"
+    stream_prefetch: int = 4
+    stream_queue_maxsize: int = 256
+    stream_publish_timeout_seconds: float = 0.2
+
     jwt_secret: str = "flowfactory-dev-jwt-secret-change-me"
     jwt_algorithm: str = "HS256"
     jwt_access_ttl_seconds: int = 900

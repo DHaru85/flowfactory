@@ -43,12 +43,19 @@ def test_happy_path_and_next_turn() -> None:
     assert sm.state == StreamState.IDLE
 
 
-def test_illegal_delta_before_run() -> None:
+def test_speaking_from_subscribed_starts_run() -> None:
     sm = StreamStateMachine()
     sm.apply_command("subscribe")
+    spoken = sm.apply_event(SseEvent(event="speaking", data={"delta": "x"}))
+    assert sm.state == StreamState.RUN_ACTIVE
+    assert spoken[0].event == "speaking"
+
+
+def test_illegal_delta_while_idle() -> None:
+    sm = StreamStateMachine()
     with pytest.raises(StreamProtocolError) as exc:
         sm.apply_event(SseEvent(event="speaking", data={"delta": "x"}))
-    assert exc.value.state == StreamState.SUBSCRIBED
+    assert exc.value.state == StreamState.IDLE
 
 
 def test_format_sse_frame() -> None:
@@ -61,11 +68,12 @@ def test_format_sse_frame() -> None:
 
 @pytest.mark.asyncio
 async def test_conversation_sse_iter_bus_inject() -> None:
-    from api.sse.bus import InMemorySseBus, set_sse_bus_override
     from api.sse.stream import conversation_sse_iter
+    from service.events.factory import set_stream_bus_override
+    from service.events.fake import FakeStreamEventBus
 
-    bus = InMemorySseBus()
-    set_sse_bus_override(bus)
+    bus = FakeStreamEventBus()
+    set_stream_bus_override(bus)
     cid = uuid4()
     agen = conversation_sse_iter(cid)
     try:
@@ -76,4 +84,4 @@ async def test_conversation_sse_iter_bus_inject() -> None:
         assert "event: run_submitted" in second
     finally:
         await agen.aclose()
-        set_sse_bus_override(None)
+        set_stream_bus_override(None)

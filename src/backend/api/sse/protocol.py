@@ -1,4 +1,4 @@
-"""SSE 帧（对齐 data_schema_server.md Conversation 域）。"""
+"""SSE 帧：与服务层 StreamEvent 字段对齐。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ import json
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from service.events.schemas import StreamEvent as SseEvent
+from service.events.schemas import run_lifecycle_event, speaking_event
 
 ProtocolEventName = Literal[
     "connected",
@@ -26,25 +27,8 @@ DELTA_EVENTS = frozenset(
 )
 
 
-class SseEvent(BaseModel):
-    event: str
-    data: dict[str, object] = Field(default_factory=dict)
-    id: str | None = None
-
-
-def speaking_event(*, delta: str, message_id: UUID, event_id: str | None = None) -> SseEvent:
-    return SseEvent(
-        event="speaking",
-        data={"delta": delta, "message_id": str(message_id)},
-        id=event_id,
-    )
-
-
 def run_submitted_event(*, run_id: UUID, message_id: UUID) -> SseEvent:
-    return SseEvent(
-        event="run_submitted",
-        data={"run_id": str(run_id), "message_id": str(message_id)},
-    )
+    return run_lifecycle_event("run_submitted", run_id=run_id, message_id=message_id)
 
 
 def format_sse(event: SseEvent) -> str:
@@ -53,3 +37,14 @@ def format_sse(event: SseEvent) -> str:
         lines.append(f"id: {event.id}")
     lines.append(f"data: {json.dumps(event.data, ensure_ascii=False)}")
     return "\n".join(lines) + "\n\n"
+
+
+__all__ = [
+    "CONTROL_EVENTS",
+    "DELTA_EVENTS",
+    "ProtocolEventName",
+    "SseEvent",
+    "format_sse",
+    "run_submitted_event",
+    "speaking_event",
+]

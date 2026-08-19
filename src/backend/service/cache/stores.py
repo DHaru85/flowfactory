@@ -197,7 +197,7 @@ class KnowledgeCacheStore:
 
 
 class ConversationCacheStore:
-    """会话流式与 SSE 订阅。"""
+    """会话热状态：断线文本缓冲与 SSE 在场登记，不承担帧投递。"""
 
     def __init__(self, client: redis.Redis) -> None:
         self._client = client
@@ -218,6 +218,7 @@ class ConversationCacheStore:
         connection_id: str,
         ttl: int,
     ) -> None:
+        """仅登记连接 id（在场），事件帧走 RabbitMQ ff.stream。"""
         key = CacheKeys.sse_subscribers(conversation_id)
         pipe = self._client.pipeline()
         pipe.sadd(key, connection_id)

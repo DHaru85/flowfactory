@@ -23,7 +23,7 @@ from api.deps import (
     get_workflow_runtime,
 )
 from api.errors import http_error
-from api.sse.bus import get_sse_bus
+from api.sse.bus import publish_sse
 from api.sse.protocol import run_submitted_event
 from api.sse.stream import conversation_sse_iter
 from data_schema.conversation.models import Conversation, Message
@@ -185,7 +185,7 @@ async def send_message(
         )
     )
     event = run_submitted_event(run_id=run_id, message_id=assistant_msg.id)
-    await get_sse_bus().publish(conv.id, event)
+    await publish_sse(conv.id, event)
     return SendMessageOut(
         conversation_id=conv.id,
         user_message_id=user_msg.id,

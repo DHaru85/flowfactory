@@ -1,50 +1,30 @@
-"""进程内 SSE 事件总线（本轮默认，非 Redis）。"""
+"""应用层对服务层 StreamEventBus 的薄封装。"""
 
 from __future__ import annotations
 
 import asyncio
 from uuid import UUID
 
-from api.sse.protocol import SseEvent
-
-_override: InMemorySseBus | None = None
-
-
-class InMemorySseBus:
-    def __init__(self) -> None:
-        self._subs: dict[UUID, list[asyncio.Queue[SseEvent]]] = {}
-
-    def subscribe(self, conversation_id: UUID) -> asyncio.Queue[SseEvent]:
-        queue: asyncio.Queue[SseEvent] = asyncio.Queue()
-        self._subs.setdefault(conversation_id, []).append(queue)
-        return queue
-
-    def unsubscribe(self, conversation_id: UUID, queue: asyncio.Queue[SseEvent]) -> None:
-        holders = self._subs.get(conversation_id)
-        if holders is None:
-            return
-        if queue in holders:
-            holders.remove(queue)
-        if not holders:
-            self._subs.pop(conversation_id, None)
-
-    async def publish(self, conversation_id: UUID, event: SseEvent) -> None:
-        for queue in list(self._subs.get(conversation_id, [])):
-            await queue.put(event)
-
-    def subscriber_count(self, conversation_id: UUID) -> int:
-        return len(self._subs.get(conversation_id, []))
+from service.events.factory import get_stream_bus
+from service.events.schemas import StreamEvent
+from settings.config import get_settings
 
 
-def set_sse_bus_override(bus: InMemorySseBus | None) -> None:
-    global _override
-    _override = bus
+async def subscribe_sse(
+    conversation_id: UUID,
+) -> asyncio.Queue[StreamEvent]:
+    cfg = get_settings()
+    queue: asyncio.Queue[StreamEvent] = asyncio.Queue(maxsize=max(8, cfg.stream_queue_maxsize))
+    await get_stream_bus().subscribe(conversation_id, queue)
+    return queue
 
 
-def get_sse_bus() -> InMemorySseBus:
-    if _override is not None:
-        return _override
-    return _default_bus
+async def unsubscribe_sse(
+    conversation_id: UUID,
+    queue: asyncio.Queue[StreamEvent],
+) -> None:
+    await get_stream_bus().unsubscribe(conversation_id, queue)
 
 
-_default_bus = InMemorySseBus()
+async def publish_sse(conversation_id: UUID, event: StreamEvent) -> None:
+    await get_stream_bus().publish(conversation_id, event)

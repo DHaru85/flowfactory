@@ -104,9 +104,12 @@ class StreamStateMachine:
         return [self._emit(event)]
 
     def _delta(self, event: SseEvent) -> list[SseEvent]:
+        if self.state == StreamState.SUBSCRIBED:
+            self.state = StreamState.RUN_ACTIVE
+            return [self._emit(event)]
         if self.state != StreamState.RUN_ACTIVE:
             raise StreamProtocolError(
-                f"{event.event} 仅允许在 run_active",
+                f"{event.event} 仅允许在 subscribed/run_active",
                 state=self.state,
                 event=event.event,
             )
