@@ -767,7 +767,7 @@
 | `name` | VARCHAR(128) | NOT NULL | |
 | `version` | INT | NOT NULL, DEFAULT 1 | 递增版本 |
 | `profile_id` | UUID | FK → `agent_profile.id`, NOT NULL | |
-| `definition` | JSONB | NOT NULL | LangGraph 图定义文档 |
+| `definition` | JSONB | NOT NULL | `FlowDefinitionDocument`；`schema_version=1` 见序列化对象，`0` 为现网松散 dict |
 | `status` | VARCHAR(16) | NOT NULL | `draft` / `published` / `archived` |
 | `published_at` | TIMESTAMPTZ | NULL | |
 | `created_at` | TIMESTAMPTZ | NOT NULL | |
@@ -812,10 +812,10 @@
 | `id` | UUID | PK | |
 | `flow_id` | UUID | FK → `agent_flow.id`, NOT NULL | |
 | `version` | INT | NOT NULL | 与 flow version 对齐 |
-| `state_schema` | JSONB | NOT NULL | 图 state 的 JSON Schema |
+| `state_schema` | JSONB | NOT NULL | 由图定义 `GraphStateSpec` 生成的 JSON Schema（仅三槽） |
 | `created_at` | TIMESTAMPTZ | NOT NULL | |
 
-说明：LangGraph 实际 checkpoint **字节**由 Postgres checkpointer 表存储（框架管理）；本表仅记录业务侧 state 字段说明，便于校验与文档。
+说明：LangGraph 实际 checkpoint **字节**由 Postgres checkpointer 表存储（框架管理）；本表仅记录业务侧三槽说明。不开放第四个顶层通道；`variables` 内层键可由 `GraphStateSpec.channels[name=variables].json_schema` 约束。
 
 ### 可运行对象
 
@@ -833,7 +833,7 @@
 
 | 方法 | 入参 | 出参 | 说明 |
 | --- | --- | --- | --- |
-| `compile()` | `FlowDefinitionDocument` | `FlowRuntime` | 从定义构建图 |
+| `compile()` | `FlowDefinitionDocument` | `FlowRuntime` | 从定义构建图；`schema_version=1` 为规范形态，`0` 由后续 runtime 双读 |
 | `invoke()` | `RunStatePayload` | `RunStatePayload` | 同步单步调试 |
 | `astream_events()` | `RunStatePayload`, `config` | `AsyncIterator[SseEvent]` | 生产流式事件 |
 
@@ -874,16 +874,224 @@
 
 ### 序列化对象
 
+图描述同时服务两件事：**编译** `StateGraph`（只读 `state` / `nodes` / `edges` / `branches`），以及**画布展示**（另读 `view`）。拓扑只存在边与分支上；节点不保存邻接或层级。`entry_point` 与 `interrupt_before` 不是作者字段：入口由唯一 `start` 推导，HITL 中断点由 `hitl` 节点在编译期派生。
+
 #### Flow Definition Document
 
 ##### Pydantic `FlowDefinitionDocument`
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `nodes` | list[dict] | 节点列表 |
-| `edges` | list[dict] | 边列表 |
+| `schema_version` | int | `1` 为本节结构；`0` 见本节兼容表 |
+| `state` | `GraphStateSpec` | 声明三槽及 reducer，不含一次运行的值 |
+| `nodes` | list[`FlowNode`] | 恰一个 `type=start`，至少一个 `type=end` |
+| `edges` | list[`FlowEdge`] | 无条件边，端点均为节点 id（或 `__end__`） |
+| `branches` | list[`FlowBranch`] | 条件扇出；循环用回边 + 退出谓词，无独立 loop 边类型 |
+| `view` | `FlowView` | NULL | 画布；`compile` 必须忽略 |
+
+发布校验：边/分支端点存在；`subgraph.flow_code` 指向 `published` 且编译期无 Flow 代码互引用环；运行期回边允许，靠 `max_visits`。禁止在 JSON 内嵌可执行代码。
+
+##### Pydantic `GraphStateSpec`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `channels` | list[`StateChannelSpec`] | **恰好三条**，`name` 不可增删 |
+
+##### Pydantic `StateChannelSpec`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `name` | Literal[`messages`, `variables`, `metadata`] | 顶层通道；不开放第四槽 |
+| `reducer` | Literal[`append`, `merge`] | `messages` 必须 `append`；另两槽必须 `merge` |
+| `json_schema` | dict | NULL | 仅 `variables` 可填，约束**内层键**，不是新顶层通道 |
+
+父子图均为三槽；差异只在 `variables` 的 `json_schema` 与 `input_map` / `output_map` 路径（`messages` / `variables.*` / `metadata.*`）。
+
+##### 兼容 `schema_version=0`（现网，后续 runtime 双读）
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `nodes` | list[dict] | `{id, kind, prompt}`；`kind` 为 `passthrough` / `interrupt` / `llm` |
+| `edges` | list[dict] | `{source, target}`；`target` 可为 `END` / `__end__` / `end` |
 | `entry_point` | str | 入口节点 id |
-| `interrupt_before` | list[str] | HITL 中断点 |
+| `interrupt_before` | list[str] | 编译参数；version `1` 由 `hitl` 派生 |
+
+#### Flow Node
+
+##### Enum `NodeType`
+
+| type | 名称 | 编译意图 |
+| --- | --- | --- |
+| `start` | 开始 | `add_edge(START, 后继)`；`inject` 在入图前写入三槽 |
+| `end` | 结束 | `add_edge(该点, END)` |
+| `llm` | 大模型推理 | 现网 llm 节点 |
+| `tool` | 工具调用 | 节点内 `ToolExecutor` |
+| `assign` | 状态赋值 | 替代「边上改 state」；只写 `variables.*` / `metadata.*` |
+| `hitl` | HITL | `interrupt()`，派生 `interrupt_before` |
+| `subgraph` | 子图 | **独立三槽 State + 新 Celery Run**；父留 checkpoint 后释放，见 Workflow 域 |
+| `custom` | 自定义 | 注册表 `handler_key`；现网 `passthrough` 映射为 `passthrough` |
+
+##### Pydantic `FlowNode`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | str | 文档内唯一；观测 / checkpoint / 画布稳定键 |
+| `type` | `NodeType` | discriminator |
+| `title` | str | NULL | 仅展示 |
+| `data` | 随 `type` 的对象 | 禁止 `str`；见下列模型 |
+
+##### Pydantic `StartNodeData`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `inject` | list[`InjectSpec`] | 声明从运行上下文写入哪条通道；**不**保存会话快照、时间戳、cron（cron 在 `agent_beat_task`） |
+
+##### Pydantic `InjectSpec`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `source` | Literal[`run`, `user`, `conversation`, `beat`, `clock`] | 运行时注入源 |
+| `channel` | Literal[`messages`, `variables`, `metadata`] | 目标顶层槽 |
+| `key` | str | NULL | `variables` / `metadata` 的内层键；写入 `messages` 时为空 |
+
+##### Pydantic `EndNodeData`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `output_channels` | list[Literal[`messages`, `variables`, `metadata`]] | 写入本 Run `output_payload` 的槽；不描述进程资源回收 |
+
+##### Pydantic `LlmNodeData`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `llm_ref` | str | `agent_llm.code` |
+| `system_prompt` | str | NULL | 覆盖 Profile 系统提示 |
+| `stream` | bool | 默认 true |
+
+##### Pydantic `ToolNodeData`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `tool_code` | str | `agent_tool.code` |
+| `arguments_from` | dict[str, str] | 参数名 → state 路径 |
+| `output_to` | str | 写入路径，须为 `variables.*` |
+
+##### Pydantic `AssignNodeData`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `assignments` | list[`AssignOp`] | 边不承担 transform |
+
+##### Pydantic `AssignOp`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `target` | str | `variables.*` 或 `metadata.*` |
+| `expr` | str | 从当前三槽取值的表达式（实现轮再定语法） |
+
+##### Pydantic `HitlNodeData`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `prompt_template` | str | |
+| `form_schema` | dict | NULL | 待办表单 JSON Schema |
+| `on_reject` | Literal[`fail`, `route`] | `fail` 结束 Run；`route` 走 `hitl_decision` 分支 |
+
+##### Pydantic `SubgraphNodeData`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `flow_code` | str | 目标 Flow `code` |
+| `version` | int | NULL | 空则取该 code 当前 published |
+| `input_map` | list[`StateMapEntry`] | 父三槽 → 子 `RunStatePayload` |
+| `output_map` | list[`StateMapEntry`] | 子结果 → 父三槽；可覆盖默认 `__subgraph__` 键 |
+| `timeout_seconds` | int | NULL | 等待上限；到点取消子并把 `timeout` 回传父 |
+
+定义中不展开子节点。画布下钻读取目标 Flow 的 `definition.view`。禁止同进程嵌套 compile。
+
+##### Pydantic `StateMapEntry`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `from_path` | str | 源路径，如 `variables.foo`、`messages` |
+| `to_path` | str | 目标路径，同规则 |
+
+##### Pydantic `CustomNodeData`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `handler_key` | str | worker 注册表键，禁止内嵌 Python |
+| `config` | dict | NOT NULL, DEFAULT `{}` | 静态配置 |
+
+#### Flow Edge and Branch
+
+无条件边只路由、不更新 state。条件路由是一个源点扇出到多个终点，不是「一条边一个终点」。循环是指向上游的 `FlowEdge` 或 `cases[].target`，退出写在同一 `FlowBranch`。
+
+##### Pydantic `FlowEdge`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | str | |
+| `source` | str | 节点 id |
+| `target` | str | 节点 id 或 `__end__` |
+| `label` | str | NULL | 仅展示 |
+
+##### Pydantic `FlowBranch`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | str | |
+| `source` | str | 单一源节点 |
+| `router` | `BranchRouter` | 编译为 `add_conditional_edges` 的 path |
+| `cases` | list[`BranchCase`] | `key` 与 path 返回值对应 |
+| `default_target` | str | NULL | 未命中 |
+| `max_visits` | int | NULL | 回边访问上限；超限走 `default_target` 或失败 |
+
+##### Pydantic `BranchRouter`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `kind` | Literal[`state_path`, `expr`, `hitl_decision`, `child_status`] | |
+| `path` | str | NULL | `kind=state_path` 时的三槽路径 |
+| `expr` | str | NULL | `kind=expr` |
+
+`child_status` 读取该源 `subgraph` 节点写入的 `SubgraphNodeResult.status`（`completed` / `failed` / `cancelled` / `timeout`）。
+
+##### Pydantic `BranchCase`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `key` | str | |
+| `target` | str | 节点 id 或 `__end__` |
+
+#### Flow View（仅表示层）
+
+##### Pydantic `FlowView`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `nodes` | dict[str, `NodeLayout`] | `id →` 坐标 |
+| `edges` | dict[str, `EdgeLayout`] | 锚点 / 折线 |
+| `branches` | dict[str, `EdgeLayout`] | 同边布局 |
+| `groups` | list[dict] | NULL | 画布分组，无编译语义 |
+| `computed_levels` | dict[str, int] | NULL | BFS 层级缓存；以逻辑图为准，保存前可重算 |
+
+##### Pydantic `NodeLayout`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `x` | float | |
+| `y` | float | |
+| `w` | float | NULL | |
+| `h` | float | NULL | |
+| `z` | int | NULL | |
+
+##### Pydantic `EdgeLayout`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `waypoints` | list[list[float]] | NULL | `[[x,y], ...]` |
+| `color` | str | NULL | |
 
 #### Tool Call Request / Result
 
@@ -930,7 +1138,7 @@
 
 ## Workflow Execution and Scheduling
 
-Run / Thread / Checkpoint Instance **之间无表字段外键**，由调度与运行时代码持有引用。持久化快照用于防丢与 HITL/Beat 续跑。
+Run / Thread / Checkpoint Instance **之间无表字段外键**，由调度与运行时代码持有引用。持久化快照用于防丢与 HITL / Beat / **子图等待**续跑。
 
 ### 数据
 
@@ -944,7 +1152,7 @@ Run / Thread / Checkpoint Instance **之间无表字段外键**，由调度与�
 | `flow_id` | UUID | NOT NULL | 逻辑引用 `agent_flow.id` |
 | `conversation_id` | UUID | NULL | 逻辑引用 `conv_conversation.id` |
 | `user_id` | UUID | NOT NULL | 触发用户 |
-| `status` | VARCHAR(16) | NOT NULL | `pending` / `running` / `interrupted` / `completed` / `failed` / `cancelled` |
+| `status` | VARCHAR(16) | NOT NULL | `pending` / `running` / `interrupted` / `waiting_child` / `completed` / `failed` / `cancelled` |
 | `input_payload` | JSONB | NOT NULL | 启动输入 |
 | `output_payload` | JSONB | NULL | 最终结果 |
 | `error_message` | TEXT | NULL | |
@@ -987,6 +1195,37 @@ Run / Thread / Checkpoint Instance **之间无表字段外键**，由调度与�
 | `created_at` | TIMESTAMPTZ | NOT NULL | |
 | `resolved_at` | TIMESTAMPTZ | NULL | |
 
+#### Child Run Pending（子图独立 Run 等待；不复用 HITL 表）
+
+父 worker 执行到 `subgraph` 节点：按 `input_map` 从父三槽构造子 `RunStatePayload`，`start` 子 Run（独立 `langgraph_thread_id`），父对该节点挂起（checkpoint 已在 PG），当前 Celery 任务结束，父 snapshot 置 `waiting_child`。
+
+##### ORM 表 `wf_child_run_pending`
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | UUID | PK | |
+| `parent_run_id` | UUID | NOT NULL | 逻辑引用父 `wf_run_snapshot.id` |
+| `child_run_id` | UUID | NOT NULL | 逻辑引用子 Run |
+| `node_id` | VARCHAR(128) | NOT NULL | 父图 `subgraph` 节点 id |
+| `status` | VARCHAR(16) | NOT NULL | `pending` / `resumed` / `parent_cancelled` |
+| `timeout_at` | TIMESTAMPTZ | NULL | 来自 `SubgraphNodeData.timeout_seconds` |
+| `resume_payload` | JSONB | NULL | `SubgraphNodeResult` |
+| `created_at` | TIMESTAMPTZ | NOT NULL | |
+| `resolved_at` | TIMESTAMPTZ | NULL | |
+
+索引：`idx_wf_child_parent (parent_run_id)`、`idx_wf_child_child (child_run_id)` UNIQUE、`idx_wf_child_timeout (timeout_at)` WHERE `status = 'pending'`。
+
+##### 超时 / 取消 / 完成回传
+
+| 事件 | 子 Run | 父 Run |
+| --- | --- | --- |
+| 子 `completed` / `failed` | 保持该终态 | 组装 `SubgraphNodeResult`，`output_map` 写入父三槽后 `resume` |
+| 子超时（`timeout_at`） | **取消子**（`cancelled`） | **不取消父**；`status=timeout` 作为子输出 resume 父 |
+| 取消子（管理台/API） | **取消子** | **不取消父**；`status=cancelled` 作为子输出 resume 父 |
+| 取消父 | 级联取消所有未完成子 | 父 `cancelled`，pending 置 `parent_cancelled`，**不再 resume** |
+
+超时由 Beat（或与 `expire_hitl_pending` 同类的过期任务）扫描 `timeout_at`。`SubgraphNodeResult.output` 在超时/取消时取取消瞬间 hydrate 的子三槽；没有 checkpoint 则为空三槽。默认把整份结果写入父 `variables.__subgraph__.{node_id}`，再应用 `output_map`。
+
 #### Celery Task Record（队列任务与 worker 认领记录）
 
 ##### ORM 表 `wf_celery_task_record`
@@ -1010,6 +1249,7 @@ Run / Thread / Checkpoint Instance **之间无表字段外键**，由调度与�
 | --- | --- | --- | --- |
 | `wf:run:active:{run_id}` | HASH | 随 run 生命周期 | 热状态：status、last_event_at |
 | `wf:hitl:notify:{hitl_id}` | STRING | 至 expires_at | 待办提醒去重 |
+| `wf:child:pending:{pending_id}` | STRING | 至 timeout_at | 子图等待去重 / 过期扫描辅助 |
 
 ### 可运行对象
 
@@ -1031,7 +1271,8 @@ Run / Thread / Checkpoint Instance **之间无表字段外键**，由调度与�
 | --- | --- |
 | `start()` | 写 snapshot `running`，提交 Celery |
 | `resume(hitl: HitlResumeInput)` | HITL 恢复 |
-| `cancel()` | 取消并更新 snapshot |
+| `resume_child(result: SubgraphNodeResult)` | 子图回传后恢复父（含 timeout / cancelled） |
+| `cancel()` | 取消本 Run；若存在未完成子 pending 则级联取消子 |
 | `persist()` | 将内存状态 flush 到 `wf_run_snapshot` |
 
 #### Thread（性能调度单位）
@@ -1077,9 +1318,21 @@ Run / Thread / Checkpoint Instance **之间无表字段外键**，由调度与�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `messages` | list[dict] | LangGraph state 中的消息 |
-| `variables` | dict[str, Any] | 业务变量 |
-| `metadata` | dict[str, Any] | |
+| `messages` | list[dict] | 顶层通道；reducer=`append` |
+| `variables` | dict[str, Any] | 顶层通道；reducer=`merge`；业务扩展只进本槽 |
+| `metadata` | dict[str, Any] | 顶层通道；reducer=`merge` |
+
+不增加第四个顶层字段。子图同样使用本结构作为独立 State。
+
+#### Subgraph Node Result
+
+##### Pydantic `SubgraphNodeResult`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `status` | Literal[`completed`, `failed`, `cancelled`, `timeout`] | 还给父的子终态 |
+| `output` | `RunStatePayload` | 子三槽快照；超时/取消见上表 |
+| `error` | str | NULL | 仅 `failed` |
 
 #### Thread Context Payload
 

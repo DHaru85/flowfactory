@@ -4,8 +4,8 @@
 | --- | --- | --- |
 | 映射层 / data_schema（Permission） | 空闲 | ORM + 仓储已落地；User.roles 补 foreign_keys |
 | 映射层 / data_schema（Conversation） | 空闲 | ORM + 仓储已落地 |
-| 映射层 / data_schema（Workflow） | 空闲 | ORM + 仓储已落地 |
-| 映射层 / data_schema（Agent） | 空闲 | ORM + get_tool_by_code / get_mcp_server |
+| 映射层 / data_schema（Workflow） | 空闲 | 含 `wf_child_run_pending` / `waiting_child` 设计；ORM 未迁 |
+| 映射层 / data_schema（Agent） | 空闲 | FlowDefinitionDocument schema_version=1（仅文档） |
 | 映射层 / data_schema（Knowledge） | 空闲 | embedding 列 1024 维（bge-m3）；Alembic c4a91f2e7b10 |
 | 映射层 / data_schema（Audit） | 空闲 | ORM + 仓储已落地 |
 | 映射层 / data_schema（Graph） | 空闲 | ORM + 仓储已落地 |
@@ -33,6 +33,7 @@
 
 ## 施工简报
 
+- 2026-08-19 Flow 图定义：`agent_flow.definition` 规范为 schema_version=1（三槽 state、FlowNode discriminator、无条件边 + 条件分支、view 与逻辑分离）。子图为独立 Celery Run + `waiting_child`；子超时/取消只取消子并把 `SubgraphNodeResult` 还给父；取消父级联取消子。未改 Python / Alembic。
 - 2026-08-19 流式总线：RabbitMQ `ff.stream` 与 Celery 任务队列隔离、独立连接、保守背压；LLM `stream` 打字机；护栏只作用于持久化 state。SSE 消费有界 `asyncio.Queue`。ruff 通过；相关 pytest 15 passed。
 - 2026-08-19 服务说明：新增 `docs/design/service_layer.md`，覆盖支撑设施与业务服务的使用、原理、协作流程与扩展指南。
 - 2026-08-19 知识检索：文本/MD/PDF 入库、可配置切片、bge-m3、RRF；pytest 已通过。
