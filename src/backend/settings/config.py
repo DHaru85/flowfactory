@@ -109,6 +109,9 @@ class Settings(BaseSettings):
 
     obs_redact_extra_patterns: str = ""
 
+    tool_http_timeout_seconds: float = 30.0
+    tool_http_max_body_bytes: int = 1_048_576
+
     @property
     def postgres_dsn(self) -> str:
         """psycopg / LangGraph checkpointer 使用的 DSN。"""

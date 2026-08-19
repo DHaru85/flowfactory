@@ -9,6 +9,7 @@ from data_schema.agent.models import (
     AgentBeatTask,
     AgentFlow,
     AgentLlm,
+    AgentMcpServer,
     AgentProfile,
     AgentTool,
 )
@@ -23,6 +24,7 @@ class AgentConfigRepository:
         self.llm = Repository(session, AgentLlm)
         self.profile = Repository(session, AgentProfile)
         self.tool = Repository(session, AgentTool)
+        self.mcp_server = Repository(session, AgentMcpServer)
         self.beat_task = Repository(session, AgentBeatTask)
         self.flow = Repository(session, AgentFlow)
 
@@ -50,6 +52,13 @@ class AgentConfigRepository:
         self._session.add(flow)
         await self._session.flush()
         return flow
+
+    async def get_tool_by_code(self, code: str) -> AgentTool | None:
+        stmt = select(AgentTool).where(AgentTool.code == code)
+        return await self._session.scalar(stmt)
+
+    async def get_mcp_server(self, server_id: uuid.UUID) -> AgentMcpServer | None:
+        return await self._session.get(AgentMcpServer, server_id)
 
     async def get_llm_by_code(self, code: str) -> AgentLlm | None:
         stmt = select(AgentLlm).where(AgentLlm.code == code)
