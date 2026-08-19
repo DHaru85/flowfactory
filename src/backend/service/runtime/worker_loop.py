@@ -12,6 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.workflow.models import CeleryTaskRecord, ThreadSnapshot
 from service.database.session import session_scope
+from service.observability.collector import (
+    TraceCollector,
+    attach_collector,
+    reset_collector,
+)
+from service.observability.schemas import TraceContext
 from service.persistence.factory import get_repositories
 from service.runtime.checkpointer import get_checkpointer
 from service.runtime.constants import (
@@ -103,9 +109,19 @@ async def execute_envelope(
         flow_id = run.flow_id
         langgraph_thread_id = run.langgraph_thread_id
         input_payload = RunStatePayload.model_validate(run.input_payload)
+        trace_ctx = TraceContext(
+            run_id=run.id,
+            conversation_id=run.conversation_id,
+            user_id=run.user_id,
+            flow_id=run.flow_id,
+            name="langgraph.run",
+        )
 
     touch_run_active(run_row_id, RUN_RUNNING)
 
+    collector = TraceCollector()
+    collector_token = attach_collector(collector)
+    collector.start_trace("langgraph.run", trace_ctx)
     try:
         async with session_scope() as session:
             repos = get_repositories(session)
@@ -154,6 +170,9 @@ async def execute_envelope(
                     rec.status = CELERY_SUCCESS
                     rec.finished_at = datetime.now(UTC)
 
+        collector.end_trace("ok")
+        async with session_scope() as session:
+            await collector.flush(session)
         return {
             "run_id": str(run_row_id),
             "status": "interrupted" if interrupted else "completed",
@@ -177,4 +196,12 @@ async def execute_envelope(
                     rec.status = CELERY_FAILURE
                     rec.finished_at = datetime.now(UTC)
         touch_run_active(run_row_id, RUN_FAILED)
+        collector.end_trace("error")
+        try:
+            async with session_scope() as session:
+                await collector.flush(session)
+        except Exception:
+            logger.exception("观测数据 flush 失败 run_id={}", envelope.run_id)
         raise
+    finally:
+        reset_collector(collector_token)

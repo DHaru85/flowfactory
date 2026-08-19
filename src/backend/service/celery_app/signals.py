@@ -12,6 +12,9 @@ def rebuild_process_clients(**_kwargs: object) -> None:
 
     reset_settings()
     reset_redis_client()
+    from service.observability.collector import reset_observability_context
+
+    reset_observability_context()
 
     async def _reset() -> None:
         from service.database.engine import dispose_engines
@@ -22,4 +25,4 @@ def rebuild_process_clients(**_kwargs: object) -> None:
     from service.runtime.async_utils import run_coro_factory
 
     run_coro_factory(_reset)
-    logger.info("Celery worker 子进程已重建 DB/Redis/checkpointer 客户端")
+    logger.info("Celery worker 子进程已重建 DB/Redis/checkpointer/观测 客户端")

@@ -30,6 +30,10 @@ class ObservabilityRepository:
         stmt = select(ObsTrace).where(ObsTrace.trace_id == trace_id)
         return await self._session.scalar(stmt)
 
+    async def get_span_by_span_id(self, span_id: str) -> ObsSpan | None:
+        stmt = select(ObsSpan).where(ObsSpan.span_id == span_id)
+        return await self._session.scalar(stmt)
+
     async def list_spans_by_trace(self, trace_id: str) -> list[ObsSpan]:
         stmt = select(ObsSpan).where(ObsSpan.trace_id == trace_id)
         result = await self._session.scalars(stmt)

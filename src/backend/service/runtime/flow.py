@@ -11,6 +11,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from loguru import logger
 
+from service.observability.instrument import wrap_graph_node
 from service.runtime.constants import (
     END_ALIASES,
     NODE_INTERRUPT,
@@ -127,15 +128,16 @@ class FlowRuntime:
             nid = _node_id(spec)
             kind = _node_kind(spec)
             if kind == NODE_INTERRUPT:
-                builder.add_node(nid, _make_interrupt_node(_node_prompt(spec)))
+                inner: NodeFn = _make_interrupt_node(_node_prompt(spec))
             elif kind == NODE_LLM:
                 extra = spec.get("prompt")
                 extra_s = extra if isinstance(extra, str) else None
-                builder.add_node(nid, _make_llm_node(client, extra_s))
+                inner = _make_llm_node(client, extra_s)
             else:
                 if kind != NODE_PASSTHROUGH:
                     logger.warning("未知节点 kind={}，按 passthrough 处理", kind)
-                builder.add_node(nid, _passthrough_node)
+                inner = _passthrough_node
+            builder.add_node(nid, wrap_graph_node(nid, kind, inner))
             node_ids.append(nid)
 
         if document.entry_point not in node_ids:

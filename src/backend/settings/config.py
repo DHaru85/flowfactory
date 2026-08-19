@@ -98,6 +98,17 @@ class Settings(BaseSettings):
     ldap_default_org_code: str = ""
     ldap_sync_beat_enabled: bool = False
 
+    otel_service_name: str = "flowfactory"
+    otel_enabled: bool = True
+    otel_otlp_endpoint: str = ""
+
+    langfuse_enabled: bool = False
+    langfuse_host: str = ""
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+
+    obs_redact_extra_patterns: str = ""
+
     @property
     def postgres_dsn(self) -> str:
         """psycopg / LangGraph checkpointer 使用的 DSN。"""

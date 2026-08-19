@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Protocol
 
 from loguru import logger
 from openai import AsyncOpenAI
 
+from service.observability.observe import observe_chat_completion
 from settings.config import get_settings
 
 ChatMessage = dict[str, str]
@@ -37,12 +39,41 @@ class OpenAICompatClient:
     async def complete(self, messages: list[ChatMessage]) -> str:
         payload = messages or [{"role": "user", "content": ""}]
         logger.debug("调用 LLM model={} messages={}", self._model, len(payload))
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=payload,  # type: ignore[arg-type]
+        started = perf_counter()
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=payload,  # type: ignore[arg-type]
+            )
+        except Exception as exc:
+            latency_ms = int((perf_counter() - started) * 1000)
+            observe_chat_completion(
+                payload,
+                model=self._model,
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=latency_ms,
+                status="error",
+                error_message=str(exc),
+            )
+            raise
+        latency_ms = int((perf_counter() - started) * 1000)
+        usage = response.usage
+        prompt_tokens = int(usage.prompt_tokens) if usage and usage.prompt_tokens else 0
+        completion_tokens = (
+            int(usage.completion_tokens) if usage and usage.completion_tokens else 0
         )
         choice = response.choices[0].message
-        return choice.content or ""
+        content = choice.content or ""
+        observe_chat_completion(
+            payload,
+            model=self._model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=latency_ms,
+            status="ok",
+        )
+        return content
 
 
 class FakeChatCompletionClient:
@@ -54,6 +85,14 @@ class FakeChatCompletionClient:
 
     async def complete(self, messages: list[ChatMessage]) -> str:
         self.calls.append(messages)
+        observe_chat_completion(
+            messages,
+            model="fake",
+            prompt_tokens=0,
+            completion_tokens=0,
+            latency_ms=0,
+            status="ok",
+        )
         return self.reply
 
 
