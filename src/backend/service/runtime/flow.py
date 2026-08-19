@@ -11,6 +11,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from loguru import logger
 
+from service.guardrail.instrument import wrap_guardrail_node
 from service.observability.instrument import wrap_graph_node
 from service.runtime.constants import (
     END_ALIASES,
@@ -137,7 +138,10 @@ class FlowRuntime:
                 if kind != NODE_PASSTHROUGH:
                     logger.warning("未知节点 kind={}，按 passthrough 处理", kind)
                 inner = _passthrough_node
-            builder.add_node(nid, wrap_graph_node(nid, kind, inner))
+            guarded = wrap_guardrail_node(
+                nid, kind, inner, is_entry=nid == document.entry_point
+            )
+            builder.add_node(nid, wrap_graph_node(nid, kind, guarded))
             node_ids.append(nid)
 
         if document.entry_point not in node_ids:

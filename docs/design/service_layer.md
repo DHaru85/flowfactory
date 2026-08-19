@@ -11,7 +11,7 @@
 | 分类 | 包 | 说明 |
 | --- | --- | --- |
 | 数据层支撑 | `database` / `persistence` / `cache` | 连接池、仓储、Redis 热状态；业务服务禁止绕过仓储直接拼 SQL |
-| 业务服务 | `runtime` / `celery_app` / `orchestration` / `auth` / `knowledge` / `storage` / `tools` / `observability` | 工作流、调度、鉴权、检索、对象、工具、观测 |
+| 业务服务 | `runtime` / `celery_app` / `orchestration` / `auth` / `knowledge` / `storage` / `tools` / `observability` / `guardrail` | 工作流、调度、鉴权、检索、对象、工具、观测、内容护栏 |
 
 配置集中在 `settings.config.Settings`。测试与 worker fork 后调用 `reset_settings()` 清缓存。
 
@@ -30,8 +30,9 @@
 | `service.storage` | `get_object_store()` | MinIO / HTTP GET | `minio_*` |
 | `service.tools` | `ToolExecutor` | agent 仓储、knowledge、MCP/HTTP | `tool_http_*` |
 | `service.observability` | `TraceCollector` | `obs_*` 仓储、LangFuse 工厂 | `otel_*` / `langfuse_*` / `obs_redact_*` |
+| `service.guardrail` | `GuardrailEvaluator` | security 仓储、PolicyDetector | `guardrail_*` |
 
-尚未作为独立服务包落地（仓储已有、服务层未封装）：领域图运行时、限流策略服务、审计写入门面、通知投递。需要时在对应仓储上按第 6 章约定新增包，不要塞进 `runtime`。
+尚未作为独立服务包落地（仓储已有、服务层未封装）：领域图运行时、限流策略服务、审计写入门面、通知投递。需要时在对应仓储上按第 13 章约定新增包，不要塞进 `runtime`。
 
 ## 3. 跨服务协作总览
 
@@ -51,6 +52,7 @@ flowchart TB
   KB["RetrievalService / IngestionPipeline"]
   Store["ObjectStore"]
   Obs["TraceCollector"]
+  Guard["GuardrailEvaluator"]
   Repo["get_repositories"]
   Redis["CacheStore"]
 
@@ -64,6 +66,7 @@ flowchart TB
   Celery --> Env
   Env --> Flow
   Env --> Obs
+  Env --> Guard
   Flow --> LLM
   Flow --> HITL
   Tools --> KB
@@ -71,6 +74,7 @@ flowchart TB
   KB --> Repo
   Auth --> Repo
   Auth --> Redis
+  Guard --> Repo
   Env --> Repo
   Obs --> Repo
 ```
@@ -638,7 +642,80 @@ Celery prefork 后 `reset_observability_context()`，避免 ContextVar 串进程
 
 ---
 
-## 13. 通用扩展约定
+## 13. 内容护栏（`service.guardrail`）
+
+### 13.1 使用说明
+
+```python
+from service.guardrail import (
+    GuardrailEvaluator,
+    GuardrailCheckInput,
+    attach_evaluator,
+    reset_evaluator,
+    load_rule_specs,
+)
+
+specs = await load_rule_specs(session)  # 库表 ∪ 内置（可关）
+evaluator = GuardrailEvaluator(specs, context={"run_id": run_id, "user_id": user_id})
+token = attach_evaluator(evaluator)
+try:
+    out = await evaluator.check_output(
+        GuardrailCheckInput(text=reply, stage="output")
+    )
+    await evaluator.flush(session)
+finally:
+    reset_evaluator(token)
+```
+
+流式：`consume_chunk` → `finalize_output`。`block` 抛 `GuardrailBlockedError`。图执行路径由 `execute_envelope` 自动加载规则、attach、flush。
+
+测试：`set_policy_detector_override(FakePolicyDetector(...))`。`guardrail_policy_url` 空则 `NoOpPolicyDetector`。
+
+### 13.2 原理
+
+降低风险，不承诺绝对安全。越狱/注入在**入口**；PII/敏感词在**出口**（含未来 SSE 累积，不在 FastAPI 中间件截 token）。评估不访问 ORM；`flush` 才写 `sec_policy_violation`（excerpt 再脱敏）。多规则优先级 **block > mask > log > allow**。`log` 仍放行但记违规。
+
+远程 `PolicyDetector` 为附加命中；URL 空不发网；远程失败只打日志，本地结果仍生效。重型分类模型本轮未做。限流 `RateLimiter` 本轮未做。
+
+### 13.3 工作 / 协作流程
+
+```mermaid
+sequenceDiagram
+  participant W as execute_envelope
+  participant L as load_rule_specs
+  participant E as GuardrailEvaluator
+  participant N as wrap_guardrail_node
+  participant D as PolicyDetector
+  participant DB as sec_*
+
+  W->>L: 启用规则 + 内置补齐
+  W->>E: attach
+  W->>N: ainvoke
+  N->>E: check_input / check_output
+  E->>D: detect 附加
+  alt block
+    E-->>W: GuardrailBlockedError → Run failed
+  else mask / log / allow
+    N-->>W: 可能改写 state
+  end
+  W->>E: flush
+  E->>DB: policy_violation
+```
+
+包装顺序：外层观测 span、内层护栏。Celery prefork 后 `reset_guardrail_context()`。
+
+### 13.4 扩展指南
+
+| 目标 | 做法 |
+| --- | --- |
+| 新规则 | 写入 `sec_guardrail_rule`（`jailbreak` / `pii` / `keyword` + config）。 |
+| 新 rule_type | 在 `rules.match_rule` 分支；未知类型跳过并 warning。 |
+| 外置策略服务 | 实现 `PolicyDetector` 或配 `guardrail_policy_url`；测试用 Fake。 |
+| 关闭 | `guardrail_enabled=false` 包装为空操作。 |
+
+---
+
+## 14. 通用扩展约定
 
 各外部系统接入统一为四件套，缺一不可：
 
@@ -659,6 +736,7 @@ Celery prefork 后 `reset_observability_context()`，避免 ContextVar 串进程
 | MCP | `get_mcp_session` |
 | HTTP 工具传输 | `get_http_transport` |
 | LangFuse | `get_langfuse_reporter` |
+| 护栏远程策略 | `get_policy_detector` |
 | 外层编排 | `get_orchestrator`（无 override，按配置分支） |
 
 配置：只加 `Settings` 字段 + `FLOWFACTORY_` 环境变量，不在代码里写死集群地址（文档中的默认 IP 仅反映当前开发默认值）。
@@ -667,7 +745,7 @@ Celery prefork 后 `reset_observability_context()`，避免 ContextVar 串进程
 
 施工：改服务前查 `docs/construction/status.md`；方案进 `docs/plan`；历史 plan **不可改**。
 
-## 14. 与其它设计文档的关系
+## 15. 与其它设计文档的关系
 
 | 文档 | 关系 |
 | --- | --- |
@@ -676,4 +754,4 @@ Celery prefork 后 `reset_observability_context()`，避免 ContextVar 串进程
 | [change_log.md](./change_log.md) | 设计与实现变更记录 |
 | `docs/plan/2026-08-18-*`、`2026-08-19-*` | 各服务落地时的锁定方案与验收标准 |
 
-本文档描述 **2026-08-19 工具分发完成之后** 的代码事实。规划图、SSE、限流护栏服务、领域图运行时若已实现，以代码与更新后的 change_log 为准，并应修订本章。
+本文档描述 **2026-08-19 内容护栏完成之后** 的代码事实。规划图、SSE、限流、领域图运行时若已实现，以代码与更新后的 change_log 为准，并应修订本章。

@@ -18,3 +18,4 @@
 | 2026.08.19 10:30 | src/backend | 知识检索基础设施 | 文本/MD/PDF 可配置切片；bge-m3 1024 维；pgvector+tsvector+RRF；MinIO public GET；ONNX 重排路径可配 |
 | 2026.08.19 11:00 | src/backend | 用户鉴权基础设施 | AuthService JWT+refresh；PermissionService RBAC；LDAP Adapter/bind/JIT/同步骨架 |
 | 2026.08.19 11:45 | docs/design/service_layer.md | 服务层说明文档 | 整理各服务使用说明、原理、协作流程与扩展指南 |
+| 2026.08.19 11:10 | src/backend | 内容护栏基础设施 | GuardrailEvaluator；编译期入口/llm 包装；PolicyDetector 预留；违规 flush |

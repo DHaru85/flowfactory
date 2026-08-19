@@ -15,9 +15,10 @@
 | 数据层 / service/database | 空闲 | 异步引擎改为线程局部，适配 Celery prefork/eager |
 | 数据层 / service/persistence | 空闲 | Agent 工具按 code 查询 |
 | 数据层 / service/cache | 空闲 | JwtCacheStore + GrantCacheStore |
-| 数据层 / settings | 空闲 | JWT / LDAP / MinIO / embedding / OTel / LangFuse / tool HTTP |
-| 服务层 / service/runtime | 空闲 | LLM usage + 编译期节点包装 + envelope flush |
-| 服务层 / service/celery_app | 空闲 | prefork 后重置观测 ContextVar |
+| 数据层 / settings | 空闲 | JWT / LDAP / MinIO / embedding / OTel / LangFuse / tool HTTP / guardrail |
+| 服务层 / service/runtime | 空闲 | LLM usage + 观测包装 + 护栏包装 + envelope flush |
+| 服务层 / service/guardrail | 空闲 | GuardrailEvaluator / PolicyDetector 预留 |
+| 服务层 / service/celery_app | 空闲 | prefork 后重置观测与护栏 ContextVar |
 | 服务层 / service/observability | 空闲 | TraceCollector / LangFuse 预留 / 脱敏 |
 | 服务层 / service/orchestration | 空闲 | Passthrough + Temporal 骨架 |
 | 服务层 / service/knowledge | 空闲 | 切片 / 向量化 / 检索 / 入库流水线 |
@@ -30,7 +31,8 @@
 
 ## 施工简报
 
-- 2026-08-19 服务说明：新增 `docs/design/service_layer.md`，覆盖支撑设施与 8 个业务服务的使用、原理、协作流程与扩展指南。
+- 2026-08-19 内容护栏：GuardrailEvaluator 入口越狱/出口 PII 与敏感词；编译期节点包装；PolicyDetector 预留；违规 flush。ruff 通过，pytest 79 passed。
+- 2026-08-19 服务说明：新增 `docs/design/service_layer.md`，覆盖支撑设施与业务服务的使用、原理、协作流程与扩展指南。
 - 2026-08-19 知识检索：文本/MD/PDF 入库、可配置切片、bge-m3、RRF；pytest 已通过。
 - 2026-08-19 用户鉴权：本地 Argon2 + JWT/refresh；RBAC；LDAP 协议/`Ldap3Adapter`/登录 bind 回退/JIT 映射/同步任务已预留。ruff 通过，pytest 48 passed。
 - 2026-08-19 全链路可观测：TraceCollector flush `obs_*`；LangFuse 协议/Fake/SDK 预留；LLM usage；编译期节点包装。ruff 通过，pytest 57 passed。

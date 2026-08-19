@@ -15,6 +15,9 @@ def rebuild_process_clients(**_kwargs: object) -> None:
     from service.observability.collector import reset_observability_context
 
     reset_observability_context()
+    from service.guardrail.context import reset_guardrail_context
+
+    reset_guardrail_context()
 
     async def _reset() -> None:
         from service.database.engine import dispose_engines

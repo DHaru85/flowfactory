@@ -12,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.workflow.models import CeleryTaskRecord, ThreadSnapshot
 from service.database.session import session_scope
+from service.guardrail.context import attach_evaluator, reset_evaluator
+from service.guardrail.evaluator import GuardrailEvaluator
+from service.guardrail.load import load_rule_specs
 from service.observability.collector import (
     TraceCollector,
     attach_collector,
@@ -33,6 +36,7 @@ from service.runtime.hitl import create_pending
 from service.runtime.hot_state import touch_run_active
 from service.runtime.llm import get_chat_client
 from service.runtime.schemas import CeleryTaskEnvelope, FlowDefinitionDocument, RunStatePayload
+from settings.config import get_settings
 
 
 def _run_config(thread_id: str) -> dict[str, dict[str, str]]:
@@ -122,6 +126,8 @@ async def execute_envelope(
     collector = TraceCollector()
     collector_token = attach_collector(collector)
     collector.start_trace("langgraph.run", trace_ctx)
+    evaluator: GuardrailEvaluator | None = None
+    evaluator_token = None
     try:
         async with session_scope() as session:
             repos = get_repositories(session)
@@ -129,6 +135,17 @@ async def execute_envelope(
             if thread is None:
                 raise ValueError("Thread 丢失")
             definition = await _load_definition(thread, flow_id, session)
+            if get_settings().guardrail_enabled:
+                specs = await load_rule_specs(session)
+                evaluator = GuardrailEvaluator(
+                    specs,
+                    context={
+                        "run_id": run_row_id,
+                        "user_id": trace_ctx.user_id,
+                        "conversation_id": trace_ctx.conversation_id,
+                    },
+                )
+                evaluator_token = attach_evaluator(evaluator)
 
         checkpointer = await get_checkpointer()
         runtime = FlowRuntime.compile(
@@ -173,6 +190,8 @@ async def execute_envelope(
         collector.end_trace("ok")
         async with session_scope() as session:
             await collector.flush(session)
+            if evaluator is not None:
+                await evaluator.flush(session)
         return {
             "run_id": str(run_row_id),
             "status": "interrupted" if interrupted else "completed",
@@ -200,8 +219,12 @@ async def execute_envelope(
         try:
             async with session_scope() as session:
                 await collector.flush(session)
+                if evaluator is not None:
+                    await evaluator.flush(session)
         except Exception:
-            logger.exception("观测数据 flush 失败 run_id={}", envelope.run_id)
+            logger.exception("观测/护栏 flush 失败 run_id={}", envelope.run_id)
         raise
     finally:
+        if evaluator_token is not None:
+            reset_evaluator(evaluator_token)
         reset_collector(collector_token)
