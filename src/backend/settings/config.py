@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     redis_db: int = 4
 
     celery_eager: bool = True
+    celery_eager_join: bool = False
     rabbitmq_url: str = "amqp://admin:Hisign123@192.168.129.53:5672/"
     celery_queue_run: str = "wf.run"
     celery_queue_beat: str = "wf.beat"

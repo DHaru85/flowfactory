@@ -19,7 +19,14 @@ from service.observability.instrument import wrap_graph_node
 from service.runtime.constants import NODE_LLM
 from service.runtime.context import get_graph_exec_ctx
 from service.runtime.flow import GraphState, _publish_speaking
-from service.runtime.llm import ChatCompletionClient, ChatTurnMessage, ToolCallSpec, ToolSpec
+from service.runtime.llm import (
+    ChatCompletionClient,
+    ChatMessage,
+    ChatTurn,
+    ChatTurnMessage,
+    ToolCallSpec,
+    ToolSpec,
+)
 from service.tools.schemas import ToolCallRequest, ToolCallResult
 
 PENDING_KEY = "pending_tool_calls"
@@ -152,7 +159,22 @@ class PlannerRuntime:
                 await _publish_step("planner", "规划", "completed")
                 return {"messages": messages, "variables": variables}
 
-            turn = await chat_client.complete_turn(_llm_messages(state, system), specs)
+            if not specs:
+                parts: list[str] = []
+                streamed: list[ChatMessage] = []
+                for item in _llm_messages(state, system):
+                    streamed.append(
+                        {
+                            "role": str(item.get("role") or "user"),
+                            "content": str(item.get("content") or ""),
+                        }
+                    )
+                async for delta in chat_client.stream(streamed):
+                    parts.append(delta)
+                    await _publish_speaking(delta)
+                turn = ChatTurn(content="".join(parts))
+            else:
+                turn = await chat_client.complete_turn(_llm_messages(state, system), specs)
             if turn.tool_calls:
                 for call in turn.tool_calls:
                     await _publish_tool_calling(
@@ -167,7 +189,7 @@ class PlannerRuntime:
                 return {"messages": messages, "variables": variables}
 
             content = turn.content
-            if content:
+            if content and specs:
                 await _publish_speaking(content)
             messages.append({"role": "assistant", "content": content})
             variables["last_output"] = content

@@ -10,9 +10,17 @@ export async function subscribeConversationEvents(
   signal: AbortSignal,
 ): Promise<void> {
   const token = getAccessToken();
+  const headers: Record<string, string> = {
+    Accept: "text/event-stream",
+    "Cache-Control": "no-cache",
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
   const response = await fetch(`/api/v1/conversations/${scene}/${conversationId}/events`, {
     method: "GET",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers,
+    cache: "no-store",
     signal,
   });
   if (!response.ok || response.body === null) {

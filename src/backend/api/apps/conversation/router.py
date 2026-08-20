@@ -274,6 +274,7 @@ async def _send_workflow_message(
         status="streaming",
     )
     await repos.conversation.message.add(assistant_msg)
+    await session.commit()
 
     run_id = await runtime.start(
         StartRunRequest(
@@ -382,6 +383,7 @@ async def send_planner_message(
         status="streaming",
     )
     await repos.conversation.message.add(assistant_msg)
+    await session.commit()
 
     run_id = await runtime.start(
         StartRunRequest(

@@ -59,7 +59,16 @@ export function ChatPage({ scene }: Props): ReactElement {
   const reloadMessages = useCallback(async (id: string) => {
     const rows = await listMessages(scene, id);
     setMessages(rows);
-    setStreamText({});
+    setStreamText((prev) => {
+      const next: Record<string, string> = { ...prev };
+      for (const row of rows) {
+        const text = blocksToText(row.content_blocks);
+        if (row.status === "completed" && text !== "") {
+          delete next[row.id];
+        }
+      }
+      return next;
+    });
   }, [scene]);
 
   useEffect(() => {
@@ -152,21 +161,62 @@ export function ChatPage({ scene }: Props): ReactElement {
     if (content === "" || !canControl) {
       return;
     }
+    const convId = activeId;
+    const tempUserId = `tmp-user-${Date.now()}`;
+    const tempAsstId = `tmp-asst-${Date.now()}`;
+    if (convId) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: tempUserId,
+          conversation_id: convId,
+          role: "user",
+          content_blocks: [{ type: "text", text: content }],
+          status: "completed",
+        },
+        {
+          id: tempAsstId,
+          conversation_id: convId,
+          role: "assistant",
+          content_blocks: [],
+          status: "streaming",
+        },
+      ]);
+    }
+    setInput("");
     try {
       const sent =
         scene === "planner"
           ? await sendPlannerMessage({
-              conversation_id: activeId ?? null,
+              conversation_id: convId ?? null,
               profile_id: profileId,
               content,
             })
           : await sendWorkflowMessage({
-              conversation_id: activeId ?? null,
+              conversation_id: convId ?? null,
               flow_id: flowId,
               content,
             });
-      setInput("");
-      if (sent.conversation_id !== activeId) {
+      setMessages((prev) =>
+        prev.map((row) => {
+          if (row.id === tempUserId) {
+            return { ...row, id: sent.user_message_id };
+          }
+          if (row.id === tempAsstId) {
+            return { ...row, id: sent.assistant_message_id };
+          }
+          return row;
+        }),
+      );
+      setStreamText((prev) => {
+        const streamed = prev[tempAsstId];
+        if (!streamed) {
+          return prev;
+        }
+        const { [tempAsstId]: _drop, ...rest } = prev;
+        return { ...rest, [sent.assistant_message_id]: streamed };
+      });
+      if (sent.conversation_id !== convId) {
         await reloadConvs();
         setActiveId(sent.conversation_id);
       } else {
@@ -174,6 +224,9 @@ export function ChatPage({ scene }: Props): ReactElement {
       }
     } catch (err) {
       message.error(errorMessage(err, "发送失败"));
+      if (convId) {
+        setMessages((prev) => prev.filter((row) => row.id !== tempUserId && row.id !== tempAsstId));
+      }
     }
   };
 

@@ -1,5 +1,9 @@
 # 变更日志记录
 
+| 时间 | 涉及模块 | 相关需求 | 变更说明 |
+| --- | --- | --- | --- |
+| 2026.08.20 17:15 | events / 表示层 | SSE 等整段才出字 | 本地先投递 speaking；Vite SSE 不缓冲；对齐 message_id |
+| 2026.08.20 17:00 | conversation / runtime / 表示层 | 规划会话发送延迟无回复 | eager 不堵 loop；先 commit 消息；规划 stream；前端乐观发送 |
 | 2026.08.20 16:45 | conversation / events / celery | 规划会话发起 500 | eager 不向 HTTP 抛图失败；AMQP 按 loop 隔离；发消息前校验 LLM 启用 |
 | 2026.08.20 16:30 | settings / service.events | SSE 总线接现网 RabbitMQ | 默认 `rabbitmq_url`；`stream_connect_timeout_seconds` 与 publish 超时分离 |
 | 2026.08.20 15:50 | auth / 表示层 | 自助注册 | POST /auth/register；首位用户超管；登录页增加注册入口 |

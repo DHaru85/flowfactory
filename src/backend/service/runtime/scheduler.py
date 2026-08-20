@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -51,6 +52,35 @@ def _send_celery(task_name: str, envelope: CeleryTaskEnvelope, *, task_id: str, 
         task_id=task_id,
         queue=queue,
     )
+
+
+async def _run_envelope(envelope: CeleryTaskEnvelope) -> None:
+    from service.runtime.worker_loop import execute_envelope
+
+    try:
+        await execute_envelope(envelope)
+    except Exception:
+        logger.exception("eager Run 失败 run_id={}", envelope.run_id)
+
+
+async def _dispatch_envelope(
+    task_name: str,
+    envelope: CeleryTaskEnvelope,
+    *,
+    task_id: str,
+    queue: str,
+) -> None:
+    """eager：同一事件循环执行，避免堵死 uvicorn / SSE / AMQP 消费者。"""
+    from settings.config import get_settings
+
+    cfg = get_settings()
+    if not cfg.celery_eager:
+        _send_celery(task_name, envelope, task_id=task_id, queue=queue)
+        return
+    if cfg.celery_eager_join:
+        await _run_envelope(envelope)
+        return
+    asyncio.create_task(_run_envelope(envelope))
 
 
 async def _publish_run_submitted(request: StartRunRequest, run_id: UUID) -> None:
@@ -170,7 +200,7 @@ async def start_run(request: StartRunRequest) -> UUID:
 
     touch_run_active(run_id, RUN_PENDING)
     await _publish_run_submitted(request, run_id)
-    _send_celery(TASK_RUN, envelope, task_id=celery_task_id, queue=queue)
+    await _dispatch_envelope(TASK_RUN, envelope, task_id=celery_task_id, queue=queue)
     logger.info("已提交 Run start run_id={} task_id={}", run_id, celery_task_id)
     return run_id
 
@@ -255,7 +285,7 @@ async def spawn_subgraph_child(
         live_parent.status = RUN_WAITING_CHILD
         touch_run_active(parent.id, RUN_WAITING_CHILD)
 
-    _send_celery(TASK_RUN, envelope, task_id=celery_task_id, queue=queue)
+    await _dispatch_envelope(TASK_RUN, envelope, task_id=celery_task_id, queue=queue)
     logger.info(
         "已提交子图 Run parent={} child={} node={}",
         parent.id,
@@ -299,7 +329,9 @@ async def enqueue_resume(
             queued_at=now,
         )
         await repos.workflow.celery_task.add(record)
-    _send_celery(TASK_RESUME, envelope, task_id=celery_task_id, queue=cfg.celery_queue_run)
+    await _dispatch_envelope(
+        TASK_RESUME, envelope, task_id=celery_task_id, queue=cfg.celery_queue_run
+    )
     logger.info("已提交 Run resume run_id={} kind={}", run.id, resume_kind)
     return celery_task_id
 

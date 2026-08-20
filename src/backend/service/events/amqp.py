@@ -24,11 +24,16 @@ def _enqueue(queue: asyncio.Queue[StreamEvent], event: StreamEvent, conversation
 class AmqpStreamEventBus:
     def __init__(self, amqp_url: str) -> None:
         self._url = amqp_url
+        self._origin = uuid4().hex
         self._connection: AbstractRobustConnection | None = None
         self._exchange: aio_pika.abc.AbstractExchange | None = None
         self._queue: aio_pika.abc.AbstractQueue | None = None
         self._lock = asyncio.Lock()
         self._subs: dict[UUID, list[asyncio.Queue[StreamEvent]]] = {}
+
+    def _fanout_local(self, conversation_id: UUID, event: StreamEvent) -> None:
+        for queue in list(self._subs.get(conversation_id, [])):
+            _enqueue(queue, event, conversation_id)
 
     async def _ensure(self) -> aio_pika.abc.AbstractExchange | None:
         if self._exchange is not None:
@@ -66,6 +71,12 @@ class AmqpStreamEventBus:
 
     async def _on_message(self, message: AbstractIncomingMessage) -> None:
         async with message.process(requeue=False, ignore_processed=True):
+            headers = message.headers or {}
+            origin = headers.get("origin")
+            if isinstance(origin, bytes):
+                origin = origin.decode("utf-8")
+            if origin == self._origin:
+                return
             try:
                 event = StreamEvent.model_validate_json(message.body)
             except Exception:
@@ -79,10 +90,10 @@ class AmqpStreamEventBus:
                 conversation_id = UUID(key[len(prefix) :])
             except ValueError:
                 return
-            for queue in list(self._subs.get(conversation_id, [])):
-                _enqueue(queue, event, conversation_id)
+            self._fanout_local(conversation_id, event)
 
     async def publish(self, conversation_id: UUID, event: StreamEvent) -> None:
+        self._fanout_local(conversation_id, event)
         cfg = get_settings()
         try:
             exchange = await asyncio.wait_for(
@@ -97,13 +108,14 @@ class AmqpStreamEventBus:
                         body=event.model_dump_json().encode("utf-8"),
                         delivery_mode=DeliveryMode.NOT_PERSISTENT,
                         content_type="application/json",
+                        headers={"origin": self._origin},
                     ),
                     routing_key=routing_key(conversation_id),
                 ),
                 timeout=cfg.stream_publish_timeout_seconds,
             )
         except Exception:
-            logger.warning("流式 publish 失败 conversation_id={}", conversation_id)
+            logger.warning("流式 AMQP 扇出失败 conversation_id={}", conversation_id)
 
     async def subscribe(
         self,
@@ -113,7 +125,6 @@ class AmqpStreamEventBus:
         holders = self._subs.setdefault(conversation_id, [])
         if queue not in holders:
             holders.append(queue)
-        amqp_queue = None
         exchange = await self._ensure()
         if exchange is None:
             return
