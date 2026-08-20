@@ -109,6 +109,35 @@ def _as_uuid(value: object) -> UUID | None:
         return None
 
 
+def _last_assistant_text(result: dict[str, object]) -> str:
+    variables = result.get("variables")
+    if isinstance(variables, dict) and variables.get("last_output"):
+        return str(variables["last_output"])
+    messages = result.get("messages")
+    if isinstance(messages, list):
+        for item in reversed(messages):
+            if isinstance(item, dict) and str(item.get("role") or "") == "assistant":
+                content = item.get("content")
+                if content:
+                    return str(content)
+    return ""
+
+
+async def _finalize_assistant_message(
+    message_id: UUID | None, *, status: str, text: str
+) -> None:
+    if message_id is None:
+        return
+    async with session_scope() as session:
+        repos = get_repositories(session)
+        row = await repos.conversation.message.get(message_id)
+        if row is None:
+            return
+        row.status = status
+        if text:
+            row.content_blocks = [{"type": "text", "text": text}]
+
+
 async def _publish_lifecycle(name: str, ctx: StreamPublishContext) -> None:
     if ctx.conversation_id is None:
         return
@@ -185,7 +214,9 @@ async def execute_envelope(
             thread = await repos.workflow.thread.get(envelope.thread_id)
             if thread is None:
                 raise ValueError("Thread 丢失")
-            definition = await _load_definition(thread, flow_id, session)
+            definition: dict[str, object] | None = None
+            if envelope.kind != "planner":
+                definition = await _load_definition(thread, flow_id, session)
             if get_settings().guardrail_enabled:
                 specs = await load_rule_specs(session)
                 evaluator = GuardrailEvaluator(
@@ -198,24 +229,36 @@ async def execute_envelope(
                 )
                 evaluator_token = attach_evaluator(evaluator)
 
-        parsed = parse_compile_document(definition)
-        graph_input = input_payload.to_graph_state()
-        if (
-            envelope.resume is None
-            and envelope.child_resume is None
-            and isinstance(parsed, FlowDefinitionV1)
-        ):
-            graph_input = apply_start_inject(graph_input, parsed)
-
         checkpointer = await get_checkpointer()
-        runtime = FlowRuntime.compile(
-            parsed,
-            flow_id=flow_id,
-            checkpointer=checkpointer,
-            chat_client=get_chat_client(),
-        )
         config = _run_config(langgraph_thread_id)
-        graph = runtime.graph
+        if envelope.kind == "planner":
+            from service.runtime.planner import PlannerRuntime
+
+            profile_id = envelope.profile_id or flow_id
+            async with session_scope() as session:
+                planner = await PlannerRuntime.compile_for_profile(
+                    session, profile_id, checkpointer
+                )
+            graph = planner.graph
+            graph_input = input_payload.to_graph_state()
+        else:
+            if definition is None:
+                raise ValueError(f"Flow 定义不存在: {flow_id}")
+            parsed = parse_compile_document(definition)
+            graph_input = input_payload.to_graph_state()
+            if (
+                envelope.resume is None
+                and envelope.child_resume is None
+                and isinstance(parsed, FlowDefinitionV1)
+            ):
+                graph_input = apply_start_inject(graph_input, parsed)
+            runtime = FlowRuntime.compile(
+                parsed,
+                flow_id=flow_id,
+                checkpointer=checkpointer,
+                chat_client=get_chat_client(),
+            )
+            graph = runtime.graph
         if envelope.child_resume is not None:
             result = await graph.ainvoke(
                 Command(resume=envelope.child_resume.model_dump(mode="json")),
@@ -309,6 +352,11 @@ async def execute_envelope(
             if evaluator is not None:
                 await evaluator.flush(session)
         if not interrupted:
+            await _finalize_assistant_message(
+                stream_ctx.message_id,
+                status="completed",
+                text=_last_assistant_text(result_dict),
+            )
             await _publish_lifecycle("run_completed", stream_ctx)
         return {
             "run_id": str(run_row_id),
@@ -344,6 +392,7 @@ async def execute_envelope(
                     await evaluator.flush(session)
         except Exception:
             logger.exception("观测/护栏 flush 失败 run_id={}", envelope.run_id)
+        await _finalize_assistant_message(stream_ctx.message_id, status="failed", text="")
         await _publish_lifecycle("run_failed", stream_ctx)
         raise
     finally:

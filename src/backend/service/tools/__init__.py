@@ -10,8 +10,11 @@ from service.tools.mcp import (
 )
 from service.tools.registry import get_builtin_handler, register_builtin
 from service.tools.schemas import ToolCallRequest, ToolCallResult
+from service.tools.skill import AssembledSkills, SkillRuntime
 
 __all__ = [
+    "AssembledSkills",
+    "SkillRuntime",
     "ToolExecutor",
     "ToolCallRequest",
     "ToolCallResult",

@@ -76,9 +76,15 @@ async def _create_run_records(
     langgraph_thread_id: str,
     queue: str,
 ) -> tuple[RunSnapshot, CeleryTaskEnvelope]:
-    definition = await _load_definition_dict(session, request)
+    if request.kind == "planner":
+        definition = None
+    else:
+        definition = await _load_definition_dict(session, request)
     context: dict[str, object] = {}
-    if definition is not None:
+    if request.kind == "planner":
+        context["kind"] = "planner"
+        context["profile_id"] = str(request.profile_id or request.flow_id)
+    elif definition is not None:
         context["definition"] = definition
     thread = ThreadSnapshot(
         queue_name=queue,
@@ -113,6 +119,8 @@ async def _create_run_records(
         thread_id=thread.id,
         langgraph_thread_id=langgraph_thread_id,
         input_payload=request.input_payload,
+        kind=request.kind,
+        profile_id=request.profile_id,
     )
     return run, envelope
 

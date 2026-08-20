@@ -20,6 +20,7 @@ def test_new_domain_models_registered() -> None:
         "agent_flow",
         "agent_beat_task",
         "agent_checkpoint_schema",
+        "agent_resource_binding",
         "kb_collection",
         "kb_doc",
         "kb_section",

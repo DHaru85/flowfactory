@@ -134,6 +134,27 @@ class AgentBeatTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     flow: Mapped["AgentFlow"] = relationship(back_populates="beat_tasks")
 
 
+class AgentResourceBinding(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """配置资源与 RBAC 主体的绑定（本轮只落数据，不审核）。"""
+
+    __tablename__ = "agent_resource_binding"
+    __table_args__ = (
+        UniqueConstraint(
+            "resource_type",
+            "resource_id",
+            "subject_type",
+            "subject_id",
+            name="uq_agent_resource_binding_subject",
+        ),
+    )
+
+    resource_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    subject_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    actions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+
+
 class AgentCheckpointSchema(Base, UUIDPrimaryKeyMixin):
     __tablename__ = "agent_checkpoint_schema"
 

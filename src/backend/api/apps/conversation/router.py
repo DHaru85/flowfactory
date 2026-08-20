@@ -1,7 +1,8 @@
-"""会话 REST 与 SSE。"""
+"""会话 REST 与 SSE：planner / workflow 分路径，旧路径为 workflow 别名。"""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -10,8 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.apps.conversation.schemas import (
     ConversationCreateBody,
+    ConversationDetailOut,
     ConversationOut,
     MessageOut,
+    PlannerConversationCreateBody,
+    PlannerSendMessageBody,
     SendMessageBody,
     SendMessageOut,
 )
@@ -34,6 +38,12 @@ from service.runtime.service import WorkflowRuntimeService
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["conversation"])
 
+APP_KEY_PLANNER = "planner"
+APP_KEY_WORKFLOW = "workflow"
+APP_KEY_CONVERSATION_LEGACY = "conversation"
+WORKFLOW_APP_KEYS: tuple[str, ...] = (APP_KEY_WORKFLOW, APP_KEY_CONVERSATION_LEGACY)
+PLANNER_APP_KEYS: tuple[str, ...] = (APP_KEY_PLANNER,)
+
 
 def _to_conv_out(row: Conversation) -> ConversationOut:
     return ConversationOut(
@@ -43,6 +53,18 @@ def _to_conv_out(row: Conversation) -> ConversationOut:
         app_key=row.app_key,
         flow_id=row.flow_id,
         status=row.status,
+    )
+
+
+def _to_conv_detail(row: Conversation) -> ConversationDetailOut:
+    return ConversationDetailOut(
+        id=row.id,
+        user_id=row.user_id,
+        title=row.title,
+        app_key=row.app_key,
+        flow_id=row.flow_id,
+        status=row.status,
+        metadata=dict(row.metadata_),
     )
 
 
@@ -56,10 +78,23 @@ def _to_msg_out(row: Message) -> MessageOut:
     )
 
 
+def _sse_response(conversation_id: UUID) -> StreamingResponse:
+    return StreamingResponse(
+        conversation_sse_iter(conversation_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 async def _owned_conversation(
     session: AsyncSession,
     current: CurrentUser,
     conversation_id: UUID,
+    allowed_app_keys: Sequence[str],
 ) -> Conversation:
     repos = get_repositories(session)
     conv = await repos.conversation.conversation.get(conversation_id)
@@ -67,59 +102,54 @@ async def _owned_conversation(
         raise http_error(404, "conversation_not_found", "会话不存在")
     if conv.user_id != current.id:
         raise http_error(403, "conversation_forbidden", "无权访问该会话")
+    if conv.app_key not in allowed_app_keys:
+        raise http_error(404, "conversation_not_found", "会话不存在")
     return conv
 
 
-@router.get("", response_model=list[ConversationOut])
-async def list_conversations(
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(db_session),
-    offset: int = 0,
-    limit: int = 50,
+async def _ensure_profile(session: AsyncSession, profile_id: UUID) -> None:
+    repos = get_repositories(session)
+    profile = await repos.agent.profile.get(profile_id)
+    if profile is None:
+        raise http_error(400, "profile_not_found", "规划配置不存在")
+
+
+def _metadata_profile_id(metadata: dict[str, object]) -> UUID | None:
+    raw = metadata.get("profile_id")
+    if raw is None:
+        return None
+    try:
+        return UUID(str(raw))
+    except ValueError:
+        return None
+
+
+async def _list_conversations(
+    session: AsyncSession,
+    current: CurrentUser,
+    app_keys: Sequence[str],
+    offset: int,
+    limit: int,
 ) -> list[ConversationOut]:
     repos = get_repositories(session)
-    rows = await repos.conversation.list_by_user(current.id, offset=offset, limit=min(limit, 100))
+    rows = await repos.conversation.list_by_user(
+        current.id,
+        offset=offset,
+        limit=min(limit, 100),
+        app_keys=app_keys,
+    )
     return [_to_conv_out(row) for row in rows]
 
 
-@router.post("", response_model=ConversationOut)
-async def create_conversation(
-    body: ConversationCreateBody,
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(db_session),
-) -> ConversationOut:
-    repos = get_repositories(session)
-    conv = Conversation(
-        user_id=current.id,
-        title=body.title,
-        app_key="conversation",
-        flow_id=body.flow_id,
-        status="active",
-        metadata_=body.metadata or {},
-    )
-    await repos.conversation.conversation.add(conv)
-    return _to_conv_out(conv)
-
-
-@router.get("/{conversation_id}", response_model=ConversationOut)
-async def get_conversation(
+async def _list_messages(
+    session: AsyncSession,
+    current: CurrentUser,
     conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(db_session),
-) -> ConversationOut:
-    conv = await _owned_conversation(session, current, conversation_id)
-    return _to_conv_out(conv)
-
-
-@router.get("/{conversation_id}/messages", response_model=list[MessageOut])
-async def list_messages(
-    conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(db_session),
-    offset: int = 0,
-    limit: int = 100,
+    allowed_app_keys: Sequence[str],
+    offset: int,
+    limit: int,
 ) -> list[MessageOut]:
-    await _owned_conversation(session, current, conversation_id)
+    await _owned_conversation(session, current, conversation_id, allowed_app_keys)
     repos = get_repositories(session)
     rows = await repos.conversation.list_messages(
         conversation_id, offset=offset, limit=min(limit, 200)
@@ -127,12 +157,12 @@ async def list_messages(
     return [_to_msg_out(row) for row in rows]
 
 
-@router.post("/messages", response_model=SendMessageOut)
-async def send_message(
+async def _send_workflow_message(
     body: SendMessageBody,
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(db_session),
-    runtime: WorkflowRuntimeService = Depends(get_workflow_runtime),
+    current: CurrentUser,
+    session: AsyncSession,
+    runtime: WorkflowRuntimeService,
+    create_app_key: str,
 ) -> SendMessageOut:
     repos = get_repositories(session)
     if body.conversation_id is None:
@@ -140,14 +170,16 @@ async def send_message(
         conv = Conversation(
             user_id=current.id,
             title=title,
-            app_key=body.app_key,
+            app_key=create_app_key,
             flow_id=body.flow_id,
             status="active",
             metadata_=body.metadata or {},
         )
         await repos.conversation.conversation.add(conv)
     else:
-        conv = await _owned_conversation(session, current, body.conversation_id)
+        conv = await _owned_conversation(
+            session, current, body.conversation_id, WORKFLOW_APP_KEYS
+        )
         if body.flow_id is not None:
             conv.flow_id = body.flow_id
         if body.metadata:
@@ -194,19 +226,307 @@ async def send_message(
     )
 
 
+# --- planner（静态前缀须在 /{id} 之前） ---
+
+
+@router.get("/planner", response_model=list[ConversationOut])
+async def list_planner_conversations(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+    offset: int = 0,
+    limit: int = 50,
+) -> list[ConversationOut]:
+    return await _list_conversations(session, current, PLANNER_APP_KEYS, offset, limit)
+
+
+@router.post("/planner", response_model=ConversationDetailOut)
+async def create_planner_conversation(
+    body: PlannerConversationCreateBody,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+) -> ConversationDetailOut:
+    await _ensure_profile(session, body.profile_id)
+    extra = dict(body.metadata or {})
+    extra["profile_id"] = str(body.profile_id)
+    repos = get_repositories(session)
+    conv = Conversation(
+        user_id=current.id,
+        title=body.title,
+        app_key=APP_KEY_PLANNER,
+        flow_id=None,
+        status="active",
+        metadata_=extra,
+    )
+    await repos.conversation.conversation.add(conv)
+    return _to_conv_detail(conv)
+
+
+@router.post("/planner/messages", response_model=SendMessageOut)
+async def send_planner_message(
+    body: PlannerSendMessageBody,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+    runtime: WorkflowRuntimeService = Depends(get_workflow_runtime),
+) -> SendMessageOut:
+    repos = get_repositories(session)
+    profile_id = body.profile_id
+    extra_meta = dict(body.metadata or {})
+    if body.conversation_id is None:
+        if profile_id is None:
+            raise http_error(400, "profile_id_required", "发消息需要 profile_id")
+        await _ensure_profile(session, profile_id)
+        extra_meta["profile_id"] = str(profile_id)
+        conv = Conversation(
+            user_id=current.id,
+            title=body.content[:64],
+            app_key=APP_KEY_PLANNER,
+            flow_id=None,
+            status="active",
+            metadata_=extra_meta,
+        )
+        await repos.conversation.conversation.add(conv)
+    else:
+        conv = await _owned_conversation(
+            session, current, body.conversation_id, PLANNER_APP_KEYS
+        )
+        if profile_id is None:
+            profile_id = _metadata_profile_id(dict(conv.metadata_))
+        if extra_meta:
+            conv.metadata_ = {**dict(conv.metadata_), **extra_meta}
+        if profile_id is not None:
+            conv.metadata_ = {**dict(conv.metadata_), "profile_id": str(profile_id)}
+    if profile_id is None:
+        raise http_error(400, "profile_id_required", "发消息需要 profile_id")
+    await _ensure_profile(session, profile_id)
+
+    user_msg = Message(
+        conversation_id=conv.id,
+        role="user",
+        content_blocks=[{"type": "text", "text": body.content}],
+        status="completed",
+    )
+    await repos.conversation.message.add(user_msg)
+    assistant_msg = Message(
+        conversation_id=conv.id,
+        role="assistant",
+        content_blocks=[],
+        status="streaming",
+    )
+    await repos.conversation.message.add(assistant_msg)
+
+    run_id = await runtime.start(
+        StartRunRequest(
+            user_id=current.id,
+            flow_id=profile_id,
+            conversation_id=conv.id,
+            kind="planner",
+            profile_id=profile_id,
+            input_payload=RunStatePayload(
+                messages=[{"role": "user", "content": body.content}],
+                variables={"input": body.content},
+                metadata={
+                    "app_key": conv.app_key,
+                    "assistant_message_id": str(assistant_msg.id),
+                    "profile_id": str(profile_id),
+                },
+            ),
+        )
+    )
+    event = run_submitted_event(run_id=run_id, message_id=assistant_msg.id)
+    await publish_sse(conv.id, event)
+    return SendMessageOut(
+        conversation_id=conv.id,
+        user_message_id=user_msg.id,
+        assistant_message_id=assistant_msg.id,
+        run_id=run_id,
+    )
+
+
+@router.get("/planner/{conversation_id}", response_model=ConversationDetailOut)
+async def get_planner_conversation(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+) -> ConversationDetailOut:
+    conv = await _owned_conversation(session, current, conversation_id, PLANNER_APP_KEYS)
+    return _to_conv_detail(conv)
+
+
+@router.get("/planner/{conversation_id}/messages", response_model=list[MessageOut])
+async def list_planner_messages(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+    offset: int = 0,
+    limit: int = 100,
+) -> list[MessageOut]:
+    return await _list_messages(
+        session, current, conversation_id, PLANNER_APP_KEYS, offset, limit
+    )
+
+
+@router.get("/planner/{conversation_id}/events")
+async def subscribe_planner_events(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(get_current_user_detached),
+) -> StreamingResponse:
+    async with session_scope() as session:
+        await _owned_conversation(session, current, conversation_id, PLANNER_APP_KEYS)
+    return _sse_response(conversation_id)
+
+
+# --- workflow ---
+
+
+@router.get("/workflow", response_model=list[ConversationOut])
+async def list_workflow_conversations(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+    offset: int = 0,
+    limit: int = 50,
+) -> list[ConversationOut]:
+    return await _list_conversations(session, current, WORKFLOW_APP_KEYS, offset, limit)
+
+
+@router.post("/workflow", response_model=ConversationOut)
+async def create_workflow_conversation(
+    body: ConversationCreateBody,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+) -> ConversationOut:
+    repos = get_repositories(session)
+    conv = Conversation(
+        user_id=current.id,
+        title=body.title,
+        app_key=APP_KEY_WORKFLOW,
+        flow_id=body.flow_id,
+        status="active",
+        metadata_=body.metadata or {},
+    )
+    await repos.conversation.conversation.add(conv)
+    return _to_conv_out(conv)
+
+
+@router.post("/workflow/messages", response_model=SendMessageOut)
+async def send_workflow_message(
+    body: SendMessageBody,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+    runtime: WorkflowRuntimeService = Depends(get_workflow_runtime),
+) -> SendMessageOut:
+    return await _send_workflow_message(
+        body, current, session, runtime, APP_KEY_WORKFLOW
+    )
+
+
+@router.get("/workflow/{conversation_id}", response_model=ConversationDetailOut)
+async def get_workflow_conversation(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+) -> ConversationDetailOut:
+    conv = await _owned_conversation(session, current, conversation_id, WORKFLOW_APP_KEYS)
+    return _to_conv_detail(conv)
+
+
+@router.get("/workflow/{conversation_id}/messages", response_model=list[MessageOut])
+async def list_workflow_messages(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+    offset: int = 0,
+    limit: int = 100,
+) -> list[MessageOut]:
+    return await _list_messages(
+        session, current, conversation_id, WORKFLOW_APP_KEYS, offset, limit
+    )
+
+
+@router.get("/workflow/{conversation_id}/events")
+async def subscribe_workflow_events(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(get_current_user_detached),
+) -> StreamingResponse:
+    async with session_scope() as session:
+        await _owned_conversation(session, current, conversation_id, WORKFLOW_APP_KEYS)
+    return _sse_response(conversation_id)
+
+
+# --- 兼容别名：与 /workflow* 相同 ---
+
+
+@router.get("", response_model=list[ConversationOut])
+async def list_conversations(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+    offset: int = 0,
+    limit: int = 50,
+) -> list[ConversationOut]:
+    return await _list_conversations(session, current, WORKFLOW_APP_KEYS, offset, limit)
+
+
+@router.post("", response_model=ConversationOut)
+async def create_conversation(
+    body: ConversationCreateBody,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+) -> ConversationOut:
+    repos = get_repositories(session)
+    conv = Conversation(
+        user_id=current.id,
+        title=body.title,
+        app_key=APP_KEY_CONVERSATION_LEGACY,
+        flow_id=body.flow_id,
+        status="active",
+        metadata_=body.metadata or {},
+    )
+    await repos.conversation.conversation.add(conv)
+    return _to_conv_out(conv)
+
+
+@router.post("/messages", response_model=SendMessageOut)
+async def send_message(
+    body: SendMessageBody,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+    runtime: WorkflowRuntimeService = Depends(get_workflow_runtime),
+) -> SendMessageOut:
+    create_key = (
+        body.app_key
+        if body.app_key in WORKFLOW_APP_KEYS
+        else APP_KEY_CONVERSATION_LEGACY
+    )
+    return await _send_workflow_message(body, current, session, runtime, create_key)
+
+
+@router.get("/{conversation_id}", response_model=ConversationDetailOut)
+async def get_conversation(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+) -> ConversationDetailOut:
+    conv = await _owned_conversation(session, current, conversation_id, WORKFLOW_APP_KEYS)
+    return _to_conv_detail(conv)
+
+
+@router.get("/{conversation_id}/messages", response_model=list[MessageOut])
+async def list_messages(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+    offset: int = 0,
+    limit: int = 100,
+) -> list[MessageOut]:
+    return await _list_messages(
+        session, current, conversation_id, WORKFLOW_APP_KEYS, offset, limit
+    )
+
+
 @router.get("/{conversation_id}/events")
 async def subscribe_events(
     conversation_id: UUID,
     current: CurrentUser = Depends(get_current_user_detached),
 ) -> StreamingResponse:
     async with session_scope() as session:
-        await _owned_conversation(session, current, conversation_id)
-    return StreamingResponse(
-        conversation_sse_iter(conversation_id),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+        await _owned_conversation(session, current, conversation_id, WORKFLOW_APP_KEYS)
+    return _sse_response(conversation_id)

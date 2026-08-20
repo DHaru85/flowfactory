@@ -22,13 +22,13 @@
 | `service.database` | `session_scope` / `get_db_session` | SQLAlchemy async + psycopg | `pg_*` / `db_*` |
 | `service.persistence` | `get_repositories(session)` | ORM 映射层 | — |
 | `service.cache` | 各 `*CacheStore` | Redis | `redis_*` |
-| `service.runtime` | `WorkflowRuntimeService` | 编排、Celery、checkpointer、LLM、观测 | `llm_*` / `hitl_*` / `beat_*` / `checkpoint_pool_size` |
+| `service.runtime` | `WorkflowRuntimeService` | 编排、Celery、checkpointer、LLM、观测 | `llm_*` / `hitl_*` / `beat_*` / `planner_max_steps` / `checkpoint_pool_size` |
 | `service.celery_app` | `celery_app` 与任务函数 | runtime / knowledge / auth | `celery_*` / `rabbitmq_url` |
 | `service.orchestration` | `get_orchestrator()` | runtime.scheduler | `temporal_*` |
 | `service.auth` | `AuthService` / `PermissionService` | persistence.permission、JwtCacheStore、LDAP 工厂 | `jwt_*` / `ldap_*` |
 | `service.knowledge` | `IngestionPipeline` / `RetrievalService` | storage、embedding、persistence.knowledge | `embedding_*` / `kb_*` |
 | `service.storage` | `get_object_store()` | MinIO / HTTP GET | `minio_*` |
-| `service.tools` | `ToolExecutor` | agent 仓储、knowledge、MCP/HTTP | `tool_http_*` |
+| `service.tools` | `ToolExecutor` / `SkillRuntime` | agent 仓储、knowledge、MCP/HTTP | `tool_http_*` |
 | `service.observability` | `TraceCollector` | `obs_*` 仓储、LangFuse 工厂 | `otel_*` / `langfuse_*` / `obs_redact_*` |
 | `service.guardrail` | `GuardrailEvaluator` | security 仓储、PolicyDetector | `guardrail_*` |
 | `service.events` | `get_stream_bus()` | aio-pika / Fake | `stream_*` / `rabbitmq_url` |
@@ -230,13 +230,15 @@ await svc.resume(HitlResumeInput(hitl_id=hitl_id, decision="approve", user_input
 await svc.cancel(run_id)
 ```
 
-`StartRunRequest.definition` 可内联 `FlowDefinitionDocument`；为空则从 `agent_flow.definition` 读取。图状态**锁定三槽**：`messages`（append）/ `variables`（merge）/ `metadata`（merge）；不开放自定义顶层通道。业务字段只进 `variables`。`schema_version=1` 的图定义见 [data_schema_server.md](./data_schema_server.md)；现网松散 dict 为 version `0`。
+`StartRunRequest.definition` 可内联 `FlowDefinitionDocument`；为空则从 `agent_flow.definition` 读取。规划 Run 设 `kind=planner` 与 `profile_id`（`flow_id` 列写入 profile_id，无 Flow FK）。图状态**锁定三槽**：`messages`（append）/ `variables`（merge）/ `metadata`（merge）；不开放自定义顶层通道。业务字段只进 `variables`。`schema_version=1` 的图定义见 [data_schema_server.md](./data_schema_server.md)；现网松散 dict 为 version `0`。
 
-已实现节点：v0 `kind`（`passthrough` / `interrupt` / `llm`）；v1 `NodeType`（`start` / `end` / `llm` / `tool` / `assign` / `hitl` / `subgraph` / `custom=passthrough`）。v0 未知 kind **按 passthrough 处理并打 warning**。v1 未知 `custom.handler_key` 编译失败。
+已实现节点：v0 `kind`（`passthrough` / `interrupt` / `llm`）；v1 `NodeType`（`start` / `end` / `llm` / `tool` / `assign` / `hitl` / `subgraph` / `custom=passthrough`）。v0 未知 kind **按 passthrough 处理并打 warning**。v1 未知 `custom.handler_key` 编译失败。规划循环是独立固定图 `PlannerRuntime`（planner ⇄ tools），**不是**一种 Flow 节点。
 
-LLM：`get_chat_client()` → `OpenAICompatClient`（vLLM OpenAI 兼容）。测试用 `set_chat_client_override(FakeChatCompletionClient())`（见 `runtime/llm.py`）。
+LLM：`get_chat_client()` → `OpenAICompatClient`（vLLM OpenAI 兼容）。按库配置解析走 `resolve_llm_client(llm_id=...|code=...)`。规划步用 `complete_turn(..., tools=)`。测试用 `set_chat_client_override(FakeChatCompletionClient())`（见 `runtime/llm.py`），override 优先于库配置。`planner_max_steps` 限制循环。
 
 Checkpointer：`get_checkpointer()`，进程内 setup Postgres 表。
+
+`SkillRuntime`（`service/tools/skill.py`）按 Profile.`skill_ids` 拼技能说明、展开工具，执行走 `ToolExecutor`。
 
 ### 5.2 原理
 
@@ -244,7 +246,8 @@ Checkpointer：`get_checkpointer()`，进程内 setup Postgres 表。
 - **图状态**由 LangGraph + Postgres checkpointer 负责；Celery 只投递「执行/恢复」信封 `CeleryTaskEnvelope`。
 - **HITL**：图内 `interrupt()` 或 `interrupt_before` 导致当次 `ainvoke` 停住；服务层写 `wf_hitl_pending`，Run 置 `interrupted`。恢复走 `Command(resume=...)` 再入队。
 - **子图**：禁止同进程嵌套 compile。子 Flow 使用独立三槽 State 与独立 `langgraph_thread_id`，作为新 Celery Run；父留 checkpoint，snapshot 置 `waiting_child` 后释放 worker。子完成/失败或超时/取消后，将 `SubgraphNodeResult` 写入父三槽再 resume 父。超时或取消**只取消子**，父不自动取消。取消父则级联取消未完成子且不再 resume。表 `wf_child_run_pending` 已落地。
-- **Beat**：业务 cron 以 `agent_beat_task` 为准；Celery Beat 只跑固定 tick（`dispatch_beat_tasks`、`expire_hitl_pending`、`expire_child_run_pending`）。
+- **规划循环**：`execute_envelope` 读 `kind=planner` 时 `PlannerRuntime.compile_for_profile`，同一 `run_langgraph_flow` 任务。完成时按 `assistant_message_id` 回写会话消息。
+- **Beat**：业务 cron 以 `agent_beat_task` 为准；Celery Beat 只跑固定 tick（`dispatch_beat_tasks`、`expire_hitl_pending`、`expire_child_run_pending`）。规划 Beat 仍见 unreached。
 
 Run 状态：`pending` / `running` / `interrupted` / `waiting_child` / `completed` / `failed` / `cancelled`。
 
@@ -283,9 +286,9 @@ Beat：`dispatch_due_tasks` 读启用任务 → `croniter` 判断窗口 → `Age
 | 目标 | 做法 |
 | --- | --- |
 | 新节点 kind | 在 `flow.py` 增加编译分支；用 `wrap_graph_node` 包一层；更新常量 `NODE_*`；补单测。不要把重逻辑写进 Celery task。 |
-| 规划循环 / 工具节点 | v1 `tool` 节点已调 `ToolExecutor`。规划循环 / SkillRuntime 尚未落地。 |
-| 子图节点 | **不要**把子 Flow 编进同一张 `StateGraph`。独立 Run + `waiting_child` + `wf_child_run_pending`；超时/取消回传 `SubgraphNodeResult`。 |
-| 换 LLM 供应商 | 实现 `ChatCompletionClient.complete`，`set_chat_client_override` 或改 `get_chat_client`。usage 通过 `observe_chat_completion` 交给 Collector。 |
+| 规划循环 / 工具节点 | 规划走 `PlannerRuntime` + `SkillRuntime`（自研循环，不引入 deepagents）。v1 Flow `tool` 节点仍调 `ToolExecutor`。 |
+| 子图节点 | **不要**把子 Flow 编进同一张 `StateGraph`。独立 Run + `waiting_child` + `wf_child_run_pending`；超时/取消回传 `SubgraphNodeResult`。
+| 换 LLM 供应商 | 实现 `ChatCompletionClient.complete`，`set_chat_client_override` 或改 `get_chat_client` / `resolve_llm_client`。usage 通过 `observe_chat_completion` 交给 Collector。模型目录写接口在应用 `models`。 |
 | 新 HITL 决策 | 扩展 `HitlResumeInput.decision` 需同步改 `hitl.apply_resume_decision` 与 Run 状态机。 |
 
 ---
@@ -571,7 +574,7 @@ HTTP 测试：`set_http_transport_override` 或给 `HttpxToolTransport` 注入 `
 
 ### 11.2 原理
 
-ToolExecutor 是后续规划智能体的前置分发器，**尚未挂到 FlowRuntime 节点**。业务失败与未知 kind 返回 `ToolCallResult(success=false)`。有活跃 `TraceCollector` 时 `observe_tool_call` 写工具缓冲（摘要脱敏）。
+ToolExecutor 按 `agent_tool.kind` 分发。规划循环经 `SkillRuntime` 调用它；v1 Flow `tool` 节点同样调用。业务失败与未知 kind 返回 `ToolCallResult(success=false)`。有活跃 `TraceCollector` 时 `observe_tool_call` 写工具缓冲（摘要脱敏）。
 
 ### 11.3 工作 / 协作流程
 

@@ -7,6 +7,7 @@ from data_schema.agent.models import (
     AgentLlm,
     AgentMcpServer,
     AgentProfile,
+    AgentResourceBinding,
     AgentSkill,
     AgentTool,
 )
@@ -83,6 +84,7 @@ __all__ = [
     "AgentFlow",
     "AgentBeatTask",
     "AgentCheckpointSchema",
+    "AgentResourceBinding",
     "KnowledgeCollection",
     "KnowledgeDoc",
     "KnowledgeSection",

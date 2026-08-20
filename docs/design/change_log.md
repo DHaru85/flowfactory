@@ -18,4 +18,5 @@
 | 2026.08.19 10:30 | src/backend | 知识检索基础设施 | 文本/MD/PDF 可配置切片；bge-m3 1024 维；pgvector+tsvector+RRF；MinIO public GET；ONNX 重排路径可配 |
 | 2026.08.19 11:00 | src/backend | 用户鉴权基础设施 | AuthService JWT+refresh；PermissionService RBAC；LDAP Adapter/bind/JIT/同步骨架 |
 | 2026.08.19 11:45 | docs/design/service_layer.md | 服务层说明文档 | 整理各服务使用说明、原理、协作流程与扩展指南 |
-| 2026.08.19 17:55 | 应用层 / studio | 工作流编排 Studio | Flow v1 配置态 CRUD/发布；不改 compile；不审 RBAC |
+| 2026.08.20 09:50 | 应用层 models/agent_config | 配置与模型第 1 轮 | LLM CRUD 打码；Profile/Skill/Tool/MCP/工作流 Beat；`agent_resource_binding`；不审 RBAC。以后轮次见 docs/plan/unreached |
+| 2026.08.20 10:10 | 服务层/应用层 规划循环 | 第 3 轮自研 PlannerRuntime | SkillRuntime；Celery `kind=planner`；planner 发消息入队；不引入 deepagents |

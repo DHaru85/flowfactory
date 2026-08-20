@@ -72,6 +72,8 @@ class CeleryTaskEnvelope(BaseModel):
     thread_id: UUID
     langgraph_thread_id: str
     input_payload: RunStatePayload
+    kind: Literal["flow", "planner"] = "flow"
+    profile_id: UUID | None = None
     resume_kind: Literal["hitl", "child"] | None = None
     resume: HitlResumeInput | None = None
     child_resume: SubgraphNodeResult | None = None
@@ -92,6 +94,8 @@ class StartRunRequest(BaseModel):
     queue_name: str | None = None
     priority: int = 0
     definition: dict[str, object] | None = None
+    kind: Literal["flow", "planner"] = "flow"
+    profile_id: UUID | None = None
 
     @field_validator("definition", mode="before")
     @classmethod

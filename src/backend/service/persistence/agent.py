@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.agent.models import (
@@ -11,6 +11,8 @@ from data_schema.agent.models import (
     AgentLlm,
     AgentMcpServer,
     AgentProfile,
+    AgentResourceBinding,
+    AgentSkill,
     AgentTool,
 )
 from service.persistence.base import Repository
@@ -23,10 +25,12 @@ class AgentConfigRepository:
         self._session = session
         self.llm = Repository(session, AgentLlm)
         self.profile = Repository(session, AgentProfile)
+        self.skill = Repository(session, AgentSkill)
         self.tool = Repository(session, AgentTool)
         self.mcp_server = Repository(session, AgentMcpServer)
         self.beat_task = Repository(session, AgentBeatTask)
         self.flow = Repository(session, AgentFlow)
+        self.binding = Repository(session, AgentResourceBinding)
 
     async def get_flow_by_code_version(
         self,
@@ -64,9 +68,56 @@ class AgentConfigRepository:
         stmt = select(AgentLlm).where(AgentLlm.code == code)
         return await self._session.scalar(stmt)
 
+    async def list_llms(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        is_active: bool | None = None,
+    ) -> list[AgentLlm]:
+        stmt = select(AgentLlm)
+        if is_active is not None:
+            stmt = stmt.where(AgentLlm.is_active.is_(is_active))
+        stmt = stmt.order_by(AgentLlm.updated_at.desc()).offset(offset).limit(limit)
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
     async def get_profile_by_code(self, code: str) -> AgentProfile | None:
         stmt = select(AgentProfile).where(AgentProfile.code == code)
         return await self._session.scalar(stmt)
+
+    async def get_skill_by_code(self, code: str) -> AgentSkill | None:
+        stmt = select(AgentSkill).where(AgentSkill.code == code)
+        return await self._session.scalar(stmt)
+
+    async def list_bindings(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+    ) -> list[AgentResourceBinding]:
+        stmt = select(AgentResourceBinding).where(
+            AgentResourceBinding.resource_type == resource_type,
+            AgentResourceBinding.resource_id == resource_id,
+        )
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
+    async def replace_bindings(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        rows: list[AgentResourceBinding],
+    ) -> list[AgentResourceBinding]:
+        await self._session.execute(
+            delete(AgentResourceBinding).where(
+                AgentResourceBinding.resource_type == resource_type,
+                AgentResourceBinding.resource_id == resource_id,
+            )
+        )
+        for row in rows:
+            self._session.add(row)
+        await self._session.flush()
+        return rows
 
     async def list_enabled_beat_tasks(self) -> list[AgentBeatTask]:
         stmt = select(AgentBeatTask).where(AgentBeatTask.is_enabled.is_(True))
@@ -113,4 +164,3 @@ class AgentConfigRepository:
         result = await self._session.scalars(stmt)
         for row in result.all():
             row.status = "archived"
-

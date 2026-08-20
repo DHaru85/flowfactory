@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://192.168.129.50:8122/v1"
     llm_api_key: str = ""
     llm_model_name: str = "qwen35_122b_a10b"
+    planner_max_steps: int = 8
 
     minio_endpoint: str = "192.168.129.53:9400"
     minio_access_key: str = "minioadmin"

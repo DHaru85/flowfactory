@@ -189,22 +189,9 @@ def _make_v1_llm_node(data: LlmNodeData, fallback: ChatCompletionClient) -> Node
 
 
 async def _client_from_ref(llm_ref: str) -> ChatCompletionClient:
-    from service.database.session import session_scope
-    from service.persistence.factory import get_repositories
-    from service.runtime.llm import OpenAICompatClient
+    from service.runtime.llm import resolve_llm_client
 
-    async with session_scope() as session:
-        llm = await get_repositories(session).agent.get_llm_by_code(llm_ref)
-        if llm is None or not llm.is_active:
-            raise ValueError(f"LLM 不可用: {llm_ref}")
-        cfg = llm.config if isinstance(llm.config, dict) else {}
-        base_url = cfg.get("base_url")
-        api_key = cfg.get("api_key")
-        return OpenAICompatClient(
-            base_url=str(base_url) if isinstance(base_url, str) else None,
-            api_key=str(api_key) if isinstance(api_key, str) else None,
-            model=llm.model_name,
-        )
+    return await resolve_llm_client(code=llm_ref)
 
 
 def _make_tool_node(node_id: str, data: ToolNodeData) -> NodeFn:

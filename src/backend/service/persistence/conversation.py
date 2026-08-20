@@ -1,6 +1,7 @@
 """Conversation 域仓储。"""
 
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,14 +24,15 @@ class ConversationRepository:
         *,
         offset: int = 0,
         limit: int = 50,
+        app_keys: Sequence[str] | None = None,
     ) -> list[Conversation]:
-        stmt = (
-            select(Conversation)
-            .where(Conversation.user_id == user_id, Conversation.status != "deleted")
-            .order_by(Conversation.updated_at.desc())
-            .offset(offset)
-            .limit(limit)
+        stmt = select(Conversation).where(
+            Conversation.user_id == user_id,
+            Conversation.status != "deleted",
         )
+        if app_keys is not None:
+            stmt = stmt.where(Conversation.app_key.in_(list(app_keys)))
+        stmt = stmt.order_by(Conversation.updated_at.desc()).offset(offset).limit(limit)
         result = await self._session.scalars(stmt)
         return list(result.all())
 

@@ -119,7 +119,7 @@
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
 | `id` | UUID | PK | 资源主键 |
-| `asset_type` | VARCHAR(32) | NOT NULL | `application` / `service` / `knowledge_collection` / `flow` / `file` 等 |
+| `asset_type` | VARCHAR(32) | NOT NULL | `application` / `service` / `knowledge_collection` / `flow` / `file` / `profile` / `skill` / `tool` / `mcp_server` 等 |
 | `asset_key` | VARCHAR(128) | NOT NULL | 稳定标识，如 `app_key`、`service_key` |
 | `name` | VARCHAR(128) | NOT NULL | 展示名 |
 | `owner_organization_id` | UUID | FK → `sys_organization.id`, NULL | 归属组织 |
@@ -523,7 +523,7 @@
 | `app_key` | VARCHAR(128) | NOT NULL | 发起会话的应用标识 |
 | `flow_id` | UUID | NULL | 关联 Flow 配置 id；逻辑引用，非强制 FK |
 | `status` | VARCHAR(16) | NOT NULL, DEFAULT `active` | `active` / `archived` / `deleted` |
-| `metadata` | JSONB | NOT NULL, DEFAULT `{}` | 扩展字段 |
+| `metadata` | JSONB | NOT NULL, DEFAULT `{}` | 扩展字段；规划会话存 `profile_id`（UUID 字符串） |
 | `created_at` | TIMESTAMPTZ | NOT NULL | 创建时间 |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | 更新时间 |
 
@@ -802,6 +802,29 @@
 | Key 模式 | 类型 | TTL | 说明 |
 | --- | --- | --- | --- |
 | `agent:beat:lock:{beat_task_id}` | STRING | 任务周期 | 分布式锁，防 Beat 重复触发 |
+
+说明：HTTP 管理面当前仅支持绑定 **工作流** `flow_id`。规划智能体定时见 `docs/plan/unreached/2026-08-20-规划智能体定时任务Beat-服务层应用层-修改.md`，本表暂不加 `profile_id`。
+
+#### Resource Binding
+
+##### ORM 表 `agent_resource_binding`
+
+配置资源与 RBAC 主体的绑定。第 1 轮只落库，**不**按绑定过滤可见性、不调用 `PermissionService`。以后审核见 `docs/plan/unreached/2026-08-20-RBAC绑定可见性与管理员创建-服务层应用层-修改.md`。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | UUID | PK | |
+| `resource_type` | VARCHAR(16) | NOT NULL | `profile` / `skill` / `tool` / `mcp_server` |
+| `resource_id` | UUID | NOT NULL | 对应配置表主键 |
+| `subject_type` | VARCHAR(16) | NOT NULL | `organization` / `department` / `role` / `user` |
+| `subject_id` | UUID | NOT NULL | 主体 id |
+| `actions` | JSONB | NOT NULL | 如 `["read","use"]`；以后管理员用 `admin` |
+| `created_at` | TIMESTAMPTZ | NOT NULL | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | |
+
+唯一约束：`UNIQUE (resource_type, resource_id, subject_type, subject_id)`。索引：`idx_agent_resource_binding_resource (resource_type, resource_id)`。
+
+创建 Profile / Skill / Tool / MCP 时同时写入 `sys_asset`：`asset_type` 同上，`asset_key` 为资源 UUID 字符串（改 `code` 不影响授权键）。`agent_profile.owner_organization_id` **不是** ACL，列保留。
 
 #### Checkpoint Schema
 

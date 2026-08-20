@@ -13,6 +13,12 @@ class ConversationCreateBody(BaseModel):
     metadata: dict[str, object] | None = None
 
 
+class PlannerConversationCreateBody(BaseModel):
+    title: str | None = Field(default=None, max_length=256)
+    profile_id: UUID
+    metadata: dict[str, object] | None = None
+
+
 class ConversationOut(BaseModel):
     id: UUID
     user_id: UUID
@@ -20,6 +26,10 @@ class ConversationOut(BaseModel):
     app_key: str
     flow_id: UUID | None
     status: str
+
+
+class ConversationDetailOut(ConversationOut):
+    metadata: dict[str, object]
 
 
 class MessageOut(BaseModel):
@@ -34,6 +44,13 @@ class SendMessageBody(BaseModel):
     conversation_id: UUID | None = None
     app_key: str = "conversation"
     flow_id: UUID | None = None
+    content: str = Field(min_length=1)
+    metadata: dict[str, object] | None = None
+
+
+class PlannerSendMessageBody(BaseModel):
+    conversation_id: UUID | None = None
+    profile_id: UUID | None = None
     content: str = Field(min_length=1)
     metadata: dict[str, object] | None = None
 
