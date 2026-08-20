@@ -1,4 +1,4 @@
-"""流式总线工厂。无 rabbitmq_url 时用 Fake，不占用 Celery 任务连接。"""
+"""流式总线工厂。rabbitmq_url 非空用独立 AMQP 连接；空则 Fake。不占用 Celery 任务连接。"""
 
 from __future__ import annotations
 

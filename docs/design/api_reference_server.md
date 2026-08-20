@@ -111,7 +111,7 @@
 | `content` | 用户文本 |
 | `metadata` | 可选 |
 
-同一请求内写入 user Message（`completed`）与 assistant Message（`streaming`），再调用 `WorkflowRuntimeService.start`（本轮测试可注入 Fake，不入队真实图）。随后向进程内总线发布 `run_submitted`。缺少 `flow_id`：`400 flow_id_required`。
+同一请求内写入 user Message（`completed`）与 assistant Message（`streaming`），再调用 `WorkflowRuntimeService.start`。随后经 `get_stream_bus()` 发布 `run_submitted`（有 `FLOWFACTORY_RABBITMQ_URL` 时走 `ff.stream`）。缺少 `flow_id`：`400 flow_id_required`。
 
 响应：`conversation_id` / `user_message_id` / `assistant_message_id` / `run_id`（不写会话表外键）。
 

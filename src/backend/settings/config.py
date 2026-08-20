@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     redis_db: int = 4
 
     celery_eager: bool = True
-    rabbitmq_url: str = ""
+    rabbitmq_url: str = "amqp://admin:Hisign123@192.168.129.53:5672/"
     celery_queue_run: str = "wf.run"
     celery_queue_beat: str = "wf.beat"
     celery_worker_concurrency: int = 4
@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     stream_exchange: str = "ff.stream"
     stream_prefetch: int = 4
     stream_queue_maxsize: int = 256
+    stream_connect_timeout_seconds: float = 8.0
     stream_publish_timeout_seconds: float = 0.2
 
     jwt_secret: str = "flowfactory-dev-jwt-secret-change-me"

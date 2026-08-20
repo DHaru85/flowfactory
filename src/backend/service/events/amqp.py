@@ -41,7 +41,7 @@ class AmqpStreamEventBus:
                 self._connection = await aio_pika.connect_robust(
                     self._url,
                     client_properties={"connection_name": "flowfactory-stream"},
-                    timeout=cfg.stream_publish_timeout_seconds,
+                    timeout=cfg.stream_connect_timeout_seconds,
                 )
                 channel = await self._connection.channel()
                 await channel.set_qos(prefetch_count=max(1, cfg.stream_prefetch))
@@ -87,7 +87,7 @@ class AmqpStreamEventBus:
         try:
             exchange = await asyncio.wait_for(
                 self._ensure(),
-                timeout=cfg.stream_publish_timeout_seconds,
+                timeout=cfg.stream_connect_timeout_seconds,
             )
             if exchange is None:
                 return

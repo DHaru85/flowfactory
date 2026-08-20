@@ -191,7 +191,7 @@ from service.events.schemas import speaking_event
 await get_stream_bus().publish(conversation_id, speaking_event(delta="你", message_id=mid))
 ```
 
-测试注入 `FakeStreamEventBus`：`set_stream_bus_override`。无 `FLOWFACTORY_RABBITMQ_URL` 时工厂返回 Fake。
+测试注入 `FakeStreamEventBus`：`set_stream_bus_override`。`FLOWFACTORY_RABBITMQ_URL` 为空时工厂返回 Fake；默认已指向现网 `192.168.129.53:5672`。连接超时用 `stream_connect_timeout_seconds`，帧投递超时仍用 `stream_publish_timeout_seconds`。
 
 **原理**
 
@@ -313,7 +313,7 @@ from service.celery_app.dispatch import send_workflow_task
 | `TASK_INGEST` | `ingest_knowledge_doc` | `celery_queue_ingest`（`kb.ingest`） |
 | `TASK_LDAP_SYNC` | `sync_ldap_directory` | beat 队列；`ldap_sync_beat_enabled` 才进 Beat |
 
-默认 `celery_eager=true`、`rabbitmq_url` 空则 `memory://`。生产填 RabbitMQ 并关 eager。
+默认 `celery_eager=true`（任务仍在调用方进程执行）。`rabbitmq_url` 默认已填现网 AMQP；空则 Celery broker 为 `memory://`。关 eager 才把长任务投到 `wf.*` / `kb.*`，与流式 exchange `ff.stream` 隔离。
 
 ### 6.2 原理
 
@@ -795,4 +795,4 @@ sequenceDiagram
 | [change_log.md](./change_log.md) | 设计与实现变更记录 |
 | `docs/plan/2026-08-18-*`、`2026-08-19-*` | 各服务落地时的锁定方案与验收标准 |
 
-本文档描述 **2026-08-19 流式 RabbitMQ 总线与 LLM stream 之后** 的代码事实。
+本文档描述 **2026-08-20 默认接入现网 RabbitMQ 流式总线** 之后的代码事实。
