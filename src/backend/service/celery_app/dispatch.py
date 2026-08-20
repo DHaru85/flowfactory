@@ -17,4 +17,10 @@ def send_workflow_task(
     from service.celery_app.tasks import resume_langgraph_flow, run_langgraph_flow
 
     task = resume_langgraph_flow if task_name == TASK_RESUME else run_langgraph_flow
+    from settings.config import get_settings
+
+    if get_settings().celery_eager:
+        return task.apply_async(
+            args=[payload], task_id=task_id, queue=queue, throw=False
+        )
     return task.apply_async(args=[payload], task_id=task_id, queue=queue)

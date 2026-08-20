@@ -25,6 +25,13 @@ from service.runtime.llm import FakeChatCompletionClient  # noqa: E402
 from service.runtime.schemas import FlowDefinitionDocument, RunStatePayload  # noqa: E402
 
 
+def test_openai_client_rejects_non_http_base_url() -> None:
+    from service.runtime.llm import OpenAICompatClient
+
+    with pytest.raises(ValueError, match="http"):
+        OpenAICompatClient(base_url="htttp://example.invalid/v1")
+
+
 @pytest.mark.asyncio
 async def test_fake_bus_drops_when_queue_full() -> None:
     bus = FakeStreamEventBus()

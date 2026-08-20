@@ -16,9 +16,9 @@
 | 数据层 / service/persistence | 空闲 | 按 binding 主体列出可见资源 id |
 | 数据层 / service/cache | 空闲 | Redis 仅热状态；SSE 帧不走 Redis |
 | 数据层 / settings | 空闲 | 默认 rabbitmq_url；stream 连接超时与投递超时分离 |
-| 服务层 / service/runtime | 空闲 | compile 双读 v0/v1；HITL SSE `run_interrupted` |
-| 服务层 / service/events | 空闲 | SSE 总线接现网 AMQP；connect 超时与 publish 超时分离 |
-| 服务层 / service/celery_app | 空闲 | envelope `kind`；子图超时 tick |
+| 服务层 / service/runtime | 空闲 | start_run 先发 run_submitted |
+| 服务层 / service/events | 空闲 | AMQP 按事件循环隔离连接 |
+| 服务层 / service/celery_app | 空闲 | eager 任务不向 HTTP 传播异常 |
 | 服务层 / service/observability | 空闲 | TraceCollector / LangFuse 预留 / 脱敏 |
 | 服务层 / service/orchestration | 空闲 | Passthrough + Temporal 骨架 |
 | 服务层 / service/knowledge | 空闲 | 切片 / 向量化 / 检索 / 入库流水线 |
@@ -27,13 +27,14 @@
 | 服务层 / service/tools | 空闲 | ToolExecutor；SkillRuntime |
 | docs/design（服务说明文档） | 空闲 | 流式总线默认接现网 RabbitMQ |
 | 表示层 / frontend | 空闲 | Studio 下钻；HITL 待办与会话恢复 |
-| 应用层 / api | 空闲 | HITL 待办列表与 resume |
+| 应用层 / api | 空闲 | 规划发消息校验 LLM；HITL 待办 |
 | 服务层 / service/guardrail | 空闲 | GuardrailEvaluator / PolicyDetector 预留 |
 
 未列出的模块视为 **空闲**。
 
 ## 施工简报
 
+- 2026-08-20 规划会话 500：eager 图失败不再顶穿 HTTP；`run_submitted` 在入队前发出；AMQP 按事件循环隔离；绑定未启用 LLM 返回 400。相关 pytest 20 passed。需重启 uvicorn；该会话应改绑 `test-profile`（qwen3.5），不要用 `demo`。
 - 2026-08-20 SSE 总线：默认 `FLOWFACTORY_RABBITMQ_URL` 指向 `192.168.129.53:5672`；`AmqpStreamEventBus` 回环 speaking 成功；`ff.stream` 已 declare。连接超时与投递超时分离。ruff 通过；相关 pytest 7 passed。需重启 uvicorn 后现网 SSE 才走 AMQP。
 - 2026-08-20 子图下钻与 HITL：Studio 面包屑只读下钻已发布子图；`GET/POST /conversations/workflow/hitl-pendings`；属主/超管；SSE `run_interrupted`。pytest `test_api_hitl` + SSE 机 9 passed；`npm run build` 通过。
 - 2026-08-20 Studio 画布：`@xyflow/react`；`/studio` 列表与 `/studio/:flowId` 编辑器；坐标只写 `view`；拓扑走 nodes/edges/branches；`can_control` 才保存/发布/新草稿。`npm run build` 通过。

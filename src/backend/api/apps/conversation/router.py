@@ -29,8 +29,6 @@ from api.deps import (
     get_workflow_runtime,
 )
 from api.errors import http_error
-from api.sse.bus import publish_sse
-from api.sse.protocol import run_submitted_event
 from api.sse.stream import conversation_sse_iter
 from data_schema.conversation.models import Conversation, Message
 from data_schema.workflow.models import HitlPending, RunSnapshot
@@ -180,6 +178,11 @@ async def _ensure_profile_usable(
     access = AccessControl(session)
     if not await access.can_see_agent_resource(current.id, "profile", profile_id):
         raise http_error(404, "profile_not_found", "规划配置不存在")
+    if profile.default_llm_id is None:
+        return
+    llm = await repos.agent.llm.get(profile.default_llm_id)
+    if llm is None or not llm.is_active:
+        raise http_error(400, "llm_inactive", "规划配置绑定的模型未启用或不存在")
 
 
 def _metadata_profile_id(metadata: dict[str, object]) -> UUID | None:
@@ -284,8 +287,6 @@ async def _send_workflow_message(
             ),
         )
     )
-    event = run_submitted_event(run_id=run_id, message_id=assistant_msg.id)
-    await publish_sse(conv.id, event)
     return SendMessageOut(
         conversation_id=conv.id,
         user_message_id=user_msg.id,
@@ -400,8 +401,6 @@ async def send_planner_message(
             ),
         )
     )
-    event = run_submitted_event(run_id=run_id, message_id=assistant_msg.id)
-    await publish_sse(conv.id, event)
     return SendMessageOut(
         conversation_id=conv.id,
         user_message_id=user_msg.id,

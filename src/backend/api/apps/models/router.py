@@ -43,6 +43,18 @@ def _require_provider(provider: str) -> None:
         raise http_error(400, "provider_invalid", "provider 须为 openai / azure / local")
 
 
+def _require_config_base_url(config: dict[str, object]) -> None:
+    raw = config.get("base_url")
+    if raw is None:
+        return
+    if not isinstance(raw, str) or not (
+        raw.startswith("http://") or raw.startswith("https://")
+    ):
+        raise http_error(
+            400, "llm_base_url_invalid", "config.base_url 须以 http:// 或 https:// 开头"
+        )
+
+
 @router.get("/llms", response_model=list[LlmOut])
 async def list_llms(
     _current: CurrentUser = Depends(_use_models),
@@ -63,6 +75,7 @@ async def create_llm(
     session: AsyncSession = Depends(db_session),
 ) -> LlmOut:
     _require_provider(body.provider)
+    _require_config_base_url(dict(body.config))
     repos = get_repositories(session)
     row = AgentLlm(
         code=body.code,
@@ -122,6 +135,7 @@ async def patch_llm(
             else:
                 merged.pop("api_key", None)
         row.config = merged
+        _require_config_base_url(merged)
     return _to_out(row)
 
 

@@ -1,5 +1,6 @@
 # 变更日志记录
 
+| 2026.08.20 16:45 | conversation / events / celery | 规划会话发起 500 | eager 不向 HTTP 抛图失败；AMQP 按 loop 隔离；发消息前校验 LLM 启用 |
 | 2026.08.20 16:30 | settings / service.events | SSE 总线接现网 RabbitMQ | 默认 `rabbitmq_url`；`stream_connect_timeout_seconds` 与 publish 超时分离 |
 | 2026.08.20 15:50 | auth / 表示层 | 自助注册 | POST /auth/register；首位用户超管；登录页增加注册入口 |
 | 2026.08.20 15:35 | docs/design/data_schema_client.md | 表示层数据结构 | 按 HTTP/SSE 现网契约编写客户端三类形态；未开放 HTTP 的域保留空章 |

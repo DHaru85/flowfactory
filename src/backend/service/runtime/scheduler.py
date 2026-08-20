@@ -53,6 +53,29 @@ def _send_celery(task_name: str, envelope: CeleryTaskEnvelope, *, task_id: str, 
     )
 
 
+async def _publish_run_submitted(request: StartRunRequest, run_id: UUID) -> None:
+    """在入队/eager 执行前发出，避免图内事件早于 run_submitted。"""
+    if request.conversation_id is None:
+        return
+    raw = request.input_payload.metadata.get("assistant_message_id")
+    message_id: UUID | None = None
+    if raw is not None:
+        try:
+            message_id = UUID(str(raw))
+        except ValueError:
+            message_id = None
+    from service.events.factory import get_stream_bus
+    from service.events.schemas import run_lifecycle_event
+
+    try:
+        await get_stream_bus().publish(
+            request.conversation_id,
+            run_lifecycle_event("run_submitted", run_id=run_id, message_id=message_id),
+        )
+    except Exception:
+        logger.warning("run_submitted 投递失败 run_id={}", run_id)
+
+
 async def _load_definition_dict(
     session: AsyncSession,
     request: StartRunRequest,
@@ -146,6 +169,7 @@ async def start_run(request: StartRunRequest) -> UUID:
         )
 
     touch_run_active(run_id, RUN_PENDING)
+    await _publish_run_submitted(request, run_id)
     _send_celery(TASK_RUN, envelope, task_id=celery_task_id, queue=queue)
     logger.info("已提交 Run start run_id={} task_id={}", run_id, celery_task_id)
     return run_id

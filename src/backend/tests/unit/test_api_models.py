@@ -137,3 +137,26 @@ async def test_models_llm_secret_not_returned(api_client: AsyncClient) -> None:
     off = await api_client.post(f"/api/v1/models/llms/{llm_id}/deactivate", headers=headers)
     assert off.status_code == 200
     assert off.json()["is_active"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_create_llm_rejects_bad_base_url(api_client: AsyncClient) -> None:
+    user = await _user()
+    login = await api_client.post(
+        "/api/v1/auth/login",
+        json={"username": user.username, "password": "pw-ok"},
+    )
+    headers = _auth(login.json()["access_token"])
+    created = await api_client.post(
+        "/api/v1/models/llms",
+        headers=headers,
+        json={
+            "code": f"llm-{uuid4().hex[:8]}",
+            "provider": "local",
+            "model_name": "demo",
+            "config": {"base_url": "htttp://192.168.129.50:8122/v1"},
+        },
+    )
+    assert created.status_code == 400
+    assert created.json()["code"] == "llm_base_url_invalid"

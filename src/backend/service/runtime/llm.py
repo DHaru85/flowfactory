@@ -64,8 +64,12 @@ class OpenAICompatClient:
     ) -> None:
         cfg = get_settings()
         self._model = model or cfg.llm_model_name
+        resolved = (base_url or cfg.llm_base_url).strip()
+        if not (resolved.startswith("http://") or resolved.startswith("https://")):
+            raise ValueError(f"LLM base_url 须为 http(s) URL，当前: {resolved!r}")
+        self._base_url = resolved
         self._client = AsyncOpenAI(
-            base_url=base_url or cfg.llm_base_url,
+            base_url=resolved,
             api_key=api_key if api_key is not None else cfg.llm_api_key_or_empty_placeholder,
         )
 
@@ -77,7 +81,12 @@ class OpenAICompatClient:
 
     async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
         payload = messages or [{"role": "user", "content": ""}]
-        logger.debug("流式调用 LLM model={} messages={}", self._model, len(payload))
+        logger.debug(
+            "流式调用 LLM model={} base_url={} messages={}",
+            self._model,
+            self._base_url,
+            len(payload),
+        )
         started = perf_counter()
         prompt_tokens = 0
         completion_tokens = 0
@@ -100,6 +109,12 @@ class OpenAICompatClient:
                 if content:
                     yield content
         except Exception as exc:
+            logger.warning(
+                "LLM 流式调用失败 model={} base_url={} err={}",
+                self._model,
+                self._base_url,
+                exc,
+            )
             latency_ms = int((perf_counter() - started) * 1000)
             observe_chat_completion(
                 payload,
