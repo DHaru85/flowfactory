@@ -131,7 +131,8 @@ class McpOut(BaseModel):
 
 class BeatCreateBody(BaseModel):
     code: str = Field(min_length=1, max_length=64)
-    flow_id: UUID
+    flow_id: UUID | None = None
+    profile_id: UUID | None = None
     cron: str = Field(min_length=1, max_length=64)
     input_payload: dict[str, object] = Field(default_factory=dict)
     is_enabled: bool = True
@@ -145,7 +146,8 @@ class BeatPatchBody(BaseModel):
 class BeatOut(BaseModel):
     id: UUID
     code: str
-    flow_id: UUID
+    flow_id: UUID | None
+    profile_id: UUID | None
     cron: str
     input_payload: dict[str, object]
     is_enabled: bool

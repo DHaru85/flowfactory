@@ -96,6 +96,12 @@ async def _require_flow(session: AsyncSession, flow_id: UUID) -> None:
         raise http_error(400, "flow_not_found", "工作流不存在")
 
 
+async def _require_profile(session: AsyncSession, profile_id: UUID) -> None:
+    repos = get_repositories(session)
+    if await repos.agent.profile.get(profile_id) is None:
+        raise http_error(400, "profile_not_found", "规划配置不存在")
+
+
 def _valid_cron(cron: str) -> None:
     if not croniter.is_valid(cron):
         raise http_error(400, "cron_invalid", "cron 表达式非法")
@@ -151,6 +157,7 @@ def _beat_out(row: AgentBeatTask) -> BeatOut:
         id=row.id,
         code=row.code,
         flow_id=row.flow_id,
+        profile_id=row.profile_id,
         cron=row.cron,
         input_payload=dict(row.input_payload),
         is_enabled=row.is_enabled,
@@ -584,7 +591,7 @@ async def put_mcp_bindings(
     return await _put_bindings(session, "mcp_server", server_id, body)
 
 
-# --- Beat（仅工作流）---
+# --- Beat（工作流或规划，恰一绑定）---
 
 
 @router.get("/beat-tasks", response_model=list[BeatOut])
@@ -606,11 +613,19 @@ async def create_beat(
     session: AsyncSession = Depends(db_session),
 ) -> BeatOut:
     _valid_cron(body.cron)
-    await _require_flow(session, body.flow_id)
+    if body.flow_id is not None and body.profile_id is not None:
+        raise http_error(400, "beat_target_conflict", "flow_id 与 profile_id 只能填一个")
+    if body.flow_id is None and body.profile_id is None:
+        raise http_error(400, "beat_target_required", "需要 flow_id 或 profile_id")
+    if body.flow_id is not None:
+        await _require_flow(session, body.flow_id)
+    if body.profile_id is not None:
+        await _require_profile(session, body.profile_id)
     repos = get_repositories(session)
     row = AgentBeatTask(
         code=body.code,
         flow_id=body.flow_id,
+        profile_id=body.profile_id,
         cron=body.cron,
         input_payload=dict(body.input_payload),
         is_enabled=body.is_enabled,
@@ -620,7 +635,13 @@ async def create_beat(
         await session.flush()
     except IntegrityError as exc:
         raise http_error(409, "beat_code_conflict", "Beat code 已存在") from exc
-    logger.info("创建 Beat id={} code={} flow_id={}", row.id, row.code, row.flow_id)
+    logger.info(
+        "创建 Beat id={} code={} flow_id={} profile_id={}",
+        row.id,
+        row.code,
+        row.flow_id,
+        row.profile_id,
+    )
     return _beat_out(row)
 
 

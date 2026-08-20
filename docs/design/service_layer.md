@@ -247,7 +247,7 @@ Checkpointer：`get_checkpointer()`，进程内 setup Postgres 表。
 - **HITL**：图内 `interrupt()` 或 `interrupt_before` 导致当次 `ainvoke` 停住；服务层写 `wf_hitl_pending`，Run 置 `interrupted`。恢复走 `Command(resume=...)` 再入队。
 - **子图**：禁止同进程嵌套 compile。子 Flow 使用独立三槽 State 与独立 `langgraph_thread_id`，作为新 Celery Run；父留 checkpoint，snapshot 置 `waiting_child` 后释放 worker。子完成/失败或超时/取消后，将 `SubgraphNodeResult` 写入父三槽再 resume 父。超时或取消**只取消子**，父不自动取消。取消父则级联取消未完成子且不再 resume。表 `wf_child_run_pending` 已落地。
 - **规划循环**：`execute_envelope` 读 `kind=planner` 时 `PlannerRuntime.compile_for_profile`，同一 `run_langgraph_flow` 任务。完成时按 `assistant_message_id` 回写会话消息。
-- **Beat**：业务 cron 以 `agent_beat_task` 为准；Celery Beat 只跑固定 tick（`dispatch_beat_tasks`、`expire_hitl_pending`、`expire_child_run_pending`）。规划 Beat 仍见 unreached。
+- **Beat**：业务 cron 以 `agent_beat_task` 为准；Celery Beat 只跑固定 tick。`flow_id` 触发 Flow；`profile_id` 触发 `kind=planner`。未配置 `beat_system_user_id` 则跳过。
 
 Run 状态：`pending` / `running` / `interrupted` / `waiting_child` / `completed` / `failed` / `cancelled`。
 

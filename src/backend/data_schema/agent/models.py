@@ -5,6 +5,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -89,6 +90,7 @@ class AgentProfile(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     default_llm: Mapped["AgentLlm | None"] = relationship(back_populates="profiles")
     flows: Mapped[list["AgentFlow"]] = relationship(back_populates="profile")
+    beat_tasks: Mapped[list["AgentBeatTask"]] = relationship(back_populates="profile")
 
 
 class AgentFlow(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -116,12 +118,23 @@ class AgentFlow(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
 class AgentBeatTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "agent_beat_task"
+    __table_args__ = (
+        CheckConstraint(
+            "(flow_id IS NULL) <> (profile_id IS NULL)",
+            name="ck_agent_beat_task_flow_xor_profile",
+        ),
+    )
 
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    flow_id: Mapped[uuid.UUID] = mapped_column(
+    flow_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("agent_flow.id"),
-        nullable=False,
+        nullable=True,
+    )
+    profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_profile.id"),
+        nullable=True,
     )
     cron: Mapped[str] = mapped_column(String(64), nullable=False)
     input_payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
@@ -131,7 +144,8 @@ class AgentBeatTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
     )
 
-    flow: Mapped["AgentFlow"] = relationship(back_populates="beat_tasks")
+    flow: Mapped["AgentFlow | None"] = relationship(back_populates="beat_tasks")
+    profile: Mapped["AgentProfile | None"] = relationship(back_populates="beat_tasks")
 
 
 class AgentResourceBinding(Base, UUIDPrimaryKeyMixin, TimestampMixin):

@@ -174,7 +174,8 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         headers=headers,
         json={"code": f"b-miss-{suffix}", "cron": "* * * * *"},
     )
-    assert missing.status_code == 422
+    assert missing.status_code == 400
+    assert missing.json()["code"] == "beat_target_required"
 
     bad_flow = await api_client.post(
         "/api/v1/agent-config/beat-tasks",
@@ -199,7 +200,34 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
     )
     assert beat.status_code == 200
     assert beat.json()["flow_id"] == flow_id
-    assert "profile_id" not in beat.json()
+    assert beat.json()["profile_id"] is None
+
+    both = await api_client.post(
+        "/api/v1/agent-config/beat-tasks",
+        headers=headers,
+        json={
+            "code": f"b-both-{suffix}",
+            "flow_id": flow_id,
+            "profile_id": profile_id,
+            "cron": "* * * * *",
+        },
+    )
+    assert both.status_code == 400
+    assert both.json()["code"] == "beat_target_conflict"
+
+    planner_beat = await api_client.post(
+        "/api/v1/agent-config/beat-tasks",
+        headers=headers,
+        json={
+            "code": f"b-pl-{suffix}",
+            "profile_id": profile_id,
+            "cron": "*/10 * * * *",
+            "input_payload": {"input": "定时规划"},
+        },
+    )
+    assert planner_beat.status_code == 200
+    assert planner_beat.json()["profile_id"] == profile_id
+    assert planner_beat.json()["flow_id"] is None
 
     async with session_scope() as session:
         repos = get_repositories(session)

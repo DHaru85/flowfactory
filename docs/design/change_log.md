@@ -19,4 +19,4 @@
 | 2026.08.19 11:00 | src/backend | 用户鉴权基础设施 | AuthService JWT+refresh；PermissionService RBAC；LDAP Adapter/bind/JIT/同步骨架 |
 | 2026.08.19 11:45 | docs/design/service_layer.md | 服务层说明文档 | 整理各服务使用说明、原理、协作流程与扩展指南 |
 | 2026.08.20 09:50 | 应用层 models/agent_config | 配置与模型第 1 轮 | LLM CRUD 打码；Profile/Skill/Tool/MCP/工作流 Beat；`agent_resource_binding`；不审 RBAC。以后轮次见 docs/plan/unreached |
-| 2026.08.20 10:10 | 服务层/应用层 规划循环 | 第 3 轮自研 PlannerRuntime | SkillRuntime；Celery `kind=planner`；planner 发消息入队；不引入 deepagents |
+| 2026.08.20 14:45 | 映射/服务/应用 Beat | 规划智能体定时 | `profile_id` 与 `flow_id` 恰一；dispatch 规划 `kind=planner`；Alembic a9c3e1d04b72 |

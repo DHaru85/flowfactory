@@ -789,7 +789,8 @@
 | --- | --- | --- | --- |
 | `id` | UUID | PK | |
 | `code` | VARCHAR(64) | UNIQUE, NOT NULL | |
-| `flow_id` | UUID | FK → `agent_flow.id`, NOT NULL | |
+| `flow_id` | UUID | FK → `agent_flow.id`, NULL | 与 `profile_id` 恰一 |
+| `profile_id` | UUID | FK → `agent_profile.id`, NULL | 规划定时；与 `flow_id` 恰一 |
 | `cron` | VARCHAR(64) | NOT NULL | Celery Beat cron |
 | `input_payload` | JSONB | NOT NULL, DEFAULT `{}` | 触发时注入 Run 的输入 |
 | `is_enabled` | BOOLEAN | NOT NULL, DEFAULT true | |
@@ -803,7 +804,7 @@
 | --- | --- | --- | --- |
 | `agent:beat:lock:{beat_task_id}` | STRING | 任务周期 | 分布式锁，防 Beat 重复触发 |
 
-说明：HTTP 管理面当前仅支持绑定 **工作流** `flow_id`。规划智能体定时见 `docs/plan/unreached/2026-08-20-规划智能体定时任务Beat-服务层应用层-修改.md`，本表暂不加 `profile_id`。
+Check：`(flow_id IS NULL) <> (profile_id IS NULL)`。HTTP 管理面允许绑工作流或规划 Profile；调度见 `dispatch_due_tasks`。
 
 #### Resource Binding
 
@@ -1153,7 +1154,8 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `beat_task_id` | UUID | |
-| `flow_id` | UUID | |
+| `flow_id` | UUID | NULL | 工作流 Beat |
+| `profile_id` | UUID | NULL | 规划 Beat |
 | `input_payload` | dict[str, Any] | |
 | `scheduled_at` | datetime | |
 

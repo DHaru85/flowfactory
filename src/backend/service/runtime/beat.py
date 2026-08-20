@@ -94,31 +94,71 @@ async def dispatch_due_tasks(
         payload = BeatTaskTriggerPayload(
             beat_task_id=task.id,
             flow_id=task.flow_id,
+            profile_id=task.profile_id,
             input_payload=dict(task.input_payload),
             scheduled_at=current,
         )
-        definition = None
-        flow = await repos.agent.flow.get(task.flow_id)
-        if flow is not None:
-            definition = FlowDefinitionDocument.model_validate(flow.definition)
-        await start_run(
-            StartRunRequest(
-                user_id=user_id,
-                flow_id=task.flow_id,
-                input_payload=RunStatePayload.model_validate(task.input_payload)
-                if _looks_like_state(task.input_payload)
-                else RunStatePayload(variables=dict(task.input_payload)),
-                definition=definition,
+        if task.profile_id is not None:
+            await start_run(_planner_start_request(user_id, task))
+            logger.info("Beat 已触发规划 code={} profile_id={}", task.code, task.profile_id)
+        elif task.flow_id is not None:
+            definition = None
+            flow = await repos.agent.flow.get(task.flow_id)
+            if flow is not None:
+                definition = FlowDefinitionDocument.model_validate(flow.definition)
+            await start_run(
+                StartRunRequest(
+                    user_id=user_id,
+                    flow_id=task.flow_id,
+                    input_payload=_run_payload(task.input_payload),
+                    definition=definition,
+                )
             )
-        )
+            logger.info("Beat 已触发工作流 code={} flow_id={}", task.code, task.flow_id)
+        else:
+            logger.error("Beat 目标缺失，跳过 code={}", task.code)
+            continue
         task.last_triggered_at = current
         triggered.append(payload)
-        logger.info("Beat 已触发 code={} flow_id={}", task.code, task.flow_id)
     return triggered
+
+
+def _run_payload(raw: dict[str, object]) -> RunStatePayload:
+    if _looks_like_state(raw):
+        return RunStatePayload.model_validate(raw)
+    return RunStatePayload(variables=dict(raw))
 
 
 def _looks_like_state(payload: dict[str, object]) -> bool:
     return "messages" in payload or "variables" in payload
+
+
+def _planner_start_request(user_id: UUID, task: AgentBeatTask) -> StartRunRequest:
+    profile_id = task.profile_id
+    if profile_id is None:
+        raise ValueError("规划 Beat 缺少 profile_id")
+    payload = _run_payload(task.input_payload)
+    metadata = dict(payload.metadata)
+    metadata["app_key"] = "planner"
+    metadata["beat_task_id"] = str(task.id)
+    if not payload.messages:
+        text = str(task.input_payload.get("input") or task.input_payload.get("content") or "")
+        messages: list[dict[str, object]] = (
+            [{"role": "user", "content": text}] if text else []
+        )
+        variables = dict(payload.variables)
+        if text and "input" not in variables:
+            variables["input"] = text
+        payload = RunStatePayload(messages=messages, variables=variables, metadata=metadata)
+    else:
+        payload = payload.model_copy(update={"metadata": metadata})
+    return StartRunRequest(
+        user_id=user_id,
+        flow_id=profile_id,
+        profile_id=profile_id,
+        kind="planner",
+        input_payload=payload,
+    )
 
 
 async def mark_triggered(session: AsyncSession, task: AgentBeatTask, when: datetime) -> None:

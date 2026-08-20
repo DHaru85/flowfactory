@@ -199,11 +199,9 @@ Studio `GET /api/v1/studio/llms` 仍只读活跃项、不下发 `config`。运�
 
 ## 7. 应用 `agent_config`（`app_key=agent_config`）
 
-Profile / Skill / Tool / MCP / **工作流** Beat。需 access。本轮 **不调用** `PermissionService`，列表对任意 JWT 可见。创建配置资源时登记 `sys_asset`。绑定 `PUT .../bindings` 覆盖写入 `agent_resource_binding`，主体须存在否则 `400 subject_not_found`。
+Profile / Skill / Tool / MCP / Beat（工作流或规划）。需 access。本轮 **不调用** `PermissionService`，列表对任意 JWT 可见。创建配置资源时登记 `sys_asset`。绑定 `PUT .../bindings` 覆盖写入 `agent_resource_binding`，主体须存在否则 `400 subject_not_found`。
 
-code 冲突 `409`。缺引用 `400`（`llm_not_found` / `skill_not_found` / `tool_not_found` / `mcp_server_not_found` / `flow_not_found` / `mcp_server_required`）。非法 cron：`400 cron_invalid`。
-
-规划侧 Beat **未提供** API（unreached）。
+code 冲突 `409`。缺引用 `400`（`llm_not_found` / `skill_not_found` / `tool_not_found` / `mcp_server_not_found` / `flow_not_found` / `profile_not_found` / `mcp_server_required`）。非法 cron：`400 cron_invalid`。
 
 ### Profile
 
@@ -223,11 +221,13 @@ code 冲突 `409`。缺引用 `400`（`llm_not_found` / `skill_not_found` / `too
 
 `GET/POST /api/v1/agent-config/mcp-servers`，`GET/PATCH .../mcp-servers/{id}`，`GET/PUT .../mcp-servers/{id}/bindings`。本轮不探测连通。`transport`：`stdio` / `sse`。
 
-### Beat（仅工作流）
+### Beat（工作流或规划）
 
 `GET/POST /api/v1/agent-config/beat-tasks`，`GET/PATCH .../beat-tasks/{id}`，`POST .../beat-tasks/{id}/enable`，`POST .../beat-tasks/{id}/disable`。
 
-创建必须 `flow_id`。无 `profile_id` 字段。不改 `dispatch_due_tasks`。
+创建时 `flow_id` 与 `profile_id` 恰一：只传 `flow_id` 为工作流定时（第 1 轮契约）；只传 `profile_id` 为规划定时。皆空 `400 beat_target_required`；皆有 `400 beat_target_conflict`。响应含可空 `profile_id`。PATCH 只改 `cron` / `input_payload`。
+
+到期：工作流走 Flow compile；规划 `kind=planner` 入队，不 compile Flow。系统用户未配置则跳过。
 
 ### RBAC 预留（本轮不生效）
 

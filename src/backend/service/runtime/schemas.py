@@ -81,7 +81,8 @@ class CeleryTaskEnvelope(BaseModel):
 
 class BeatTaskTriggerPayload(BaseModel):
     beat_task_id: UUID
-    flow_id: UUID
+    flow_id: UUID | None = None
+    profile_id: UUID | None = None
     input_payload: dict[str, object] = Field(default_factory=dict)
     scheduled_at: datetime
 
