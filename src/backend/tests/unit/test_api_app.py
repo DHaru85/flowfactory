@@ -70,7 +70,24 @@ async def test_health() -> None:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_login_me_and_unauthorized_conversation(api_client: AsyncClient) -> None:
+async def test_register_and_conflict(api_client: AsyncClient) -> None:
+    suffix = uuid4().hex[:8]
+    username = f"reg-{suffix}"
+    created = await api_client.post(
+        "/api/v1/auth/register",
+        json={"username": username, "password": "pw-ok-ok"},
+    )
+    assert created.status_code == 200
+    token = created.json()["access_token"]
+    me = await api_client.get("/api/v1/auth/me", headers=_auth(token))
+    assert me.status_code == 200
+    assert me.json()["username"] == username
+    dup = await api_client.post(
+        "/api/v1/auth/register",
+        json={"username": username, "password": "pw-ok-ok"},
+    )
+    assert dup.status_code == 409
+    assert dup.json()["code"] == "username_conflict"
     user = await _user()
     denied = await api_client.get("/api/v1/conversations")
     assert denied.status_code == 401

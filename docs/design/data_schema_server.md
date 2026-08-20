@@ -265,6 +265,7 @@
 | 方法 | 入参 | 出参 | 说明 |
 | --- | --- | --- | --- |
 | `login()` | `LoginCredentials` | `TokenPairResponse` | 校验凭据，签发 access + refresh |
+| `register()` | `RegisterRequest` | `TokenPairResponse` | 本地自助注册；首用户超管；写入 default 组织 |
 | `refresh()` | `RefreshTokenRequest` | `TokenPairResponse` | 轮换 refresh；重用检测吊销 `family_id` |
 | `logout()` | `LogoutRequest` | — | access `jti` 入黑名单；refresh 标记 `revoked_at` |
 | `revoke_all_sessions()` | `user_id: UUID` | — | 更新 `revoke_before` 并清空 session index |

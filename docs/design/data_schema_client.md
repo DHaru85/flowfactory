@@ -127,6 +127,18 @@ HTTP 状态与 `code` 对照以 [api_reference_server.md](./api_reference_server
 | `username` | `string` | 1–64 | 登录名 |
 | `password` | `string` | min 1 | 仅 TLS 传输，不入库、不进视图模型 |
 
+#### Register Body
+
+对应 `RegisterBody` / `POST /api/v1/auth/register`。无需 Token。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `username` | `string` | 1–64 | 登录名 |
+| `password` | `string` | 8–128 | 仅 TLS |
+| `display_name` | `string \| null` | 最大 128 | 空则等于用户名 |
+
+成功响应为 `TokenPair`。冲突：`409 username_conflict`。首位未删除用户为超管，加入 `default` 组织。
+
 #### Refresh Body
 
 对应 `RefreshBody` / `POST /api/v1/auth/refresh`。

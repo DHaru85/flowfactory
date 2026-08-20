@@ -3,7 +3,7 @@
 本文描述 **应用层接口**（FastAPI），含 `auth` / `conversation` / `studio` / `models` / `agent_config`。服务层能力见 [service_layer.md](./service_layer.md)；表结构见 [data_schema_server.md](./data_schema_server.md)。未开工轮次见 [plan/unreached](../plan/unreached/)。
 
 - 基址前缀：`/api/v1`（健康检查除外）。
-- 鉴权：除登录、刷新、`GET /health` 外，请求头 `Authorization: Bearer <access_token>`。业务应用另需 **应用绑定或角色 grant**（见下）。
+- 鉴权：除登录、注册、刷新、`GET /health` 外，请求头 `Authorization: Bearer <access_token>`。业务应用另需 **应用绑定或角色 grant**（见下）。
 - 错误体：`{"code": string, "message": string}`。无权进入应用：`403 app_forbidden`。
 - RBAC：平台管理员 = `sys_user.is_superuser`（与 RBAC 管理员同一角色定义），天生可查看/修改/删除全部应用与资源配置。非超管分两档：**可见可用**（`read`/`use`，`write`/`admin` 亦算可见）与 **修改与完全控制**（`write`/`admin`）。应用可见性由 `agent_resource_binding`（`resource_type=application`）与 `PermissionService` 角色 grant **并集**决定；组织不沿父级继承。`GET /health` 的 `apps` 不过滤。
 - 本轮无限流 HTTP。SSE 中继为 RabbitMQ topic `ff.stream`（与 Celery 任务队列隔离）；Redis 只做断线缓冲与在场登记。
@@ -22,6 +22,10 @@
 | `services` | `service_key → health_check` |
 
 ## 2. 应用 `auth`（`app_key=auth`）
+
+### `POST /api/v1/auth/register`
+
+无需鉴权。请求：`{"username", "password"(≥8), "display_name"?}`。`display_name` 空则等于用户名。保证存在组织 `code=default`；库中尚无未删除用户时该账号为超管。响应同登录 `TokenPairResponse`。用户名冲突：`409 username_conflict`。
 
 ### `POST /api/v1/auth/login`
 

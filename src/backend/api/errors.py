@@ -17,6 +17,7 @@ from service.auth.errors import (
     TOKEN_REVOKED,
     USER_DISABLED,
     USER_NOT_FOUND,
+    USERNAME_CONFLICT,
     AuthError,
 )
 
@@ -30,6 +31,7 @@ _AUTH_401 = {
 }
 _AUTH_503 = {LDAP_UNAVAILABLE, LDAP_PROVISION_FAILED}
 _AUTH_404 = {USER_NOT_FOUND}
+_AUTH_409 = {USERNAME_CONFLICT}
 
 
 class ErrorBody(BaseModel):
@@ -52,6 +54,8 @@ def auth_error_to_http(exc: AuthError) -> HTTPException:
         return http_error(status.HTTP_404_NOT_FOUND, exc.code, exc.message)
     if exc.code in _AUTH_503:
         return http_error(status.HTTP_503_SERVICE_UNAVAILABLE, exc.code, exc.message)
+    if exc.code in _AUTH_409:
+        return http_error(status.HTTP_409_CONFLICT, exc.code, exc.message)
     return http_error(status.HTTP_400_BAD_REQUEST, exc.code, exc.message)
 
 

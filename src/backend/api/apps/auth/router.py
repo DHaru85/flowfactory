@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.access import require_platform_admin
 from api.apps.agent_config.access import load_bindings, save_bindings
 from api.apps.agent_config.schemas import BindingItem, BindingPutBody
-from api.apps.auth.schemas import AppVisibilityOut, LoginBody, LogoutBody, RefreshBody
+from api.apps.auth.schemas import AppVisibilityOut, LoginBody, LogoutBody, RefreshBody, RegisterBody
 from api.deps import CurrentUser, db_session, get_current_user
 from api.errors import auth_error_to_http, http_error
 from api.registry.application import ApplicationRegistry
@@ -21,6 +21,7 @@ from service.auth.schemas import (
     LoginCredentials,
     LogoutRequest,
     RefreshTokenRequest,
+    RegisterRequest,
     TokenPairResponse,
 )
 from service.auth.service import AuthService
@@ -62,6 +63,27 @@ async def _require_app_asset_id(
         if asset is None:
             raise http_error(404, "app_not_found", "应用不存在")
     return asset.id
+
+
+@router.post("/register", response_model=TokenPairResponse)
+async def register(
+    body: RegisterBody,
+    request: Request,
+    session: AsyncSession = Depends(db_session),
+) -> TokenPairResponse:
+    auth = AuthService(session)
+    try:
+        return await auth.register(
+            RegisterRequest(
+                username=body.username,
+                password=body.password,
+                display_name=body.display_name,
+                user_agent=request.headers.get("user-agent"),
+                client_ip=_client_ip(request),
+            )
+        )
+    except AuthError as exc:
+        raise auth_error_to_http(exc) from exc
 
 
 @router.post("/login", response_model=TokenPairResponse)

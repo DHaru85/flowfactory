@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.permission.models import (
@@ -36,6 +36,11 @@ class PermissionRepository:
     async def get_user_by_username(self, username: str) -> User | None:
         stmt = select(User).where(User.username == username, User.deleted_at.is_(None))
         return await self._session.scalar(stmt)
+
+    async def count_active_users(self) -> int:
+        stmt = select(func.count()).select_from(User).where(User.deleted_at.is_(None))
+        value = await self._session.scalar(stmt)
+        return int(value or 0)
 
     async def get_organization_by_code(self, code: str) -> Organization | None:
         stmt = select(Organization).where(Organization.code == code)

@@ -23,16 +23,20 @@
 | 服务层 / service/orchestration | 空闲 | Passthrough + Temporal 骨架 |
 | 服务层 / service/knowledge | 空闲 | 切片 / 向量化 / 检索 / 入库流水线 |
 | 服务层 / service/storage | 空闲 | ObjectStore + MinIO public GET |
-| 服务层 / service/auth | 空闲 | AccessControl 应用两档 + 资源可见性 |
+| 服务层 / service/auth | 空闲 | AccessControl；本地自助注册 |
 | 服务层 / service/tools | 空闲 | ToolExecutor；SkillRuntime |
-| docs/design（服务说明文档） | 空闲 | 含 data_schema_client；RBAC 应用/资源绑定已接通 |
-| 应用层 / api | 空闲 | 应用绑定、两档拦截、配置行级过滤 |
+| docs/design（服务说明文档） | 空闲 | 含注册契约 |
+| 表示层 / frontend | 空闲 | 含登录/注册页；登录后进入菜单布局 |
+| 应用层 / api | 空闲 | POST /auth/register |
 | 服务层 / service/guardrail | 空闲 | GuardrailEvaluator / PolicyDetector 预留 |
 
 未列出的模块视为 **空闲**。
 
 ## 施工简报
 
+- 2026-08-20 登录跳转：`RequireAuth` / `GuestOnly` 在子组件渲染时判定会话，避免父级 `element` 冻住未登录状态。登录/注册成功进入 `AppShell`；已登录访问登录/注册页重定向 `/`。`npm run build` 通过。
+- 2026-08-20 自助注册：`POST /api/v1/auth/register`；default 组织；首个未删除用户为超管；登录页「注册」入口。pytest `test_register_and_conflict` 通过；`npm run build` 通过。
+- 2026-08-20 表示层首轮：`src/frontend` Vite + React + Antd / Ant Design X。登录 JWT、`/auth/apps` 菜单、models（密钥只写）、agent_config 与绑定、planner/workflow 会话与 fetch SSE。`npm run build` 通过。Studio 画布仍在 `docs/plan/unreached/`。
 - 2026-08-20 表示层数据契约：新增 `docs/design/data_schema_client.md`（传输对象 / 可运行对象 / 视图模型）。已开放 HTTP 的 auth、会话 SSE、studio Flow v1、models、agent_config 与现网 JSON 对齐；知识库、图、护栏管理、审计、观测、通知、Run/HITL 管理等保留空章。不改 Python、不建 `src/frontend`。
 - 2026-08-20 RBAC：双层绑定（应用 ∪ 配置资源）。平台管理员 ≡ `is_superuser`，全应用/全资源查看修改删除。models/studio/agent_config（含 Beat）两档：可见可用 vs 完全控制。普通人未绑定资源 404。Alembic b1d8f4a06c31。ruff 通过；相关 pytest 26 passed。前端仍在 `docs/plan/unreached/`。
 

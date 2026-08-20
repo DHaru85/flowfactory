@@ -5,9 +5,10 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from data_schema.permission.models import RefreshToken, User
+from data_schema.permission.models import Organization, RefreshToken, User
 from service.auth.errors import (
     INVALID_CREDENTIALS,
     REFRESH_REUSE,
@@ -15,16 +16,18 @@ from service.auth.errors import (
     TOKEN_INVALID,
     TOKEN_REVOKED,
     USER_DISABLED,
+    USERNAME_CONFLICT,
     AuthError,
 )
 from service.auth.jwt_codec import JwtCodec, build_access_claims
 from service.auth.ldap.factory import get_ldap_adapter
 from service.auth.ldap.provision import provision_ldap_user
-from service.auth.password import verify_password
+from service.auth.password import hash_password, verify_password
 from service.auth.schemas import (
     LoginCredentials,
     LogoutRequest,
     RefreshTokenRequest,
+    RegisterRequest,
     TokenClaims,
     TokenPairResponse,
 )
@@ -33,6 +36,8 @@ from service.cache.client import get_redis_client
 from service.cache.stores import JwtCacheStore
 from service.persistence.factory import get_repositories
 from settings.config import get_settings
+
+_DEFAULT_ORG_CODE = "default"
 
 
 class AuthService:
@@ -61,6 +66,46 @@ class AuthService:
             user_agent=credentials.user_agent,
             client_ip=credentials.client_ip,
         )
+
+    async def register(self, request: RegisterRequest) -> TokenPairResponse:
+        repos = get_repositories(self._session)
+        existing = await repos.permission.get_user_by_username(request.username)
+        if existing is not None:
+            raise AuthError(USERNAME_CONFLICT, "用户名已存在")
+        org = await self._ensure_default_org()
+        first = await repos.permission.count_active_users() == 0
+        display = (request.display_name or "").strip() or request.username
+        user = User(
+            username=request.username,
+            display_name=display,
+            organization_id=org.id,
+            status="active",
+            is_superuser=first,
+            password_hash=hash_password(request.password),
+        )
+        await repos.permission.user.add(user)
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            raise AuthError(USERNAME_CONFLICT, "用户名已存在") from exc
+        user.last_login_at = datetime.now(UTC)
+        await self._session.flush()
+        return await self._issue_pair(
+            user,
+            family_id=uuid.uuid4(),
+            user_agent=request.user_agent,
+            client_ip=request.client_ip,
+        )
+
+    async def _ensure_default_org(self) -> Organization:
+        repos = get_repositories(self._session)
+        org = await repos.permission.get_organization_by_code(_DEFAULT_ORG_CODE)
+        if org is not None:
+            return org
+        org = Organization(code=_DEFAULT_ORG_CODE, name="默认组织", status="active")
+        await repos.permission.organization.add(org)
+        await self._session.flush()
+        return org
 
     async def refresh(self, request: RefreshTokenRequest) -> TokenPairResponse:
         repos = get_repositories(self._session)

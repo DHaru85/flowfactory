@@ -20,6 +20,14 @@ class LoginCredentials(BaseModel):
     client_ip: str | None = None
 
 
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=8, max_length=128)
+    display_name: str | None = Field(default=None, max_length=128)
+    user_agent: str | None = Field(default=None, max_length=512)
+    client_ip: str | None = None
+
+
 class TokenClaims(BaseModel):
     sub: uuid.UUID
     jti: uuid.UUID
