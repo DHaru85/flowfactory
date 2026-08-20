@@ -16,7 +16,7 @@
 | 数据层 / service/persistence | 空闲 | 按 binding 主体列出可见资源 id |
 | 数据层 / service/cache | 空闲 | Redis 仅热状态；SSE 帧不走 Redis |
 | 数据层 / settings | 空闲 | 含 stream_exchange / prefetch |
-| 服务层 / service/runtime | 空闲 | compile 双读 v0/v1；`PlannerRuntime`；Beat 规划入队 |
+| 服务层 / service/runtime | 空闲 | compile 双读 v0/v1；HITL SSE `run_interrupted` |
 | 服务层 / service/events | 空闲 | StreamEventBus Fake / AMQP ff.stream |
 | 服务层 / service/celery_app | 空闲 | envelope `kind`；子图超时 tick |
 | 服务层 / service/observability | 空闲 | TraceCollector / LangFuse 预留 / 脱敏 |
@@ -26,14 +26,15 @@
 | 服务层 / service/auth | 空闲 | AccessControl；本地自助注册 |
 | 服务层 / service/tools | 空闲 | ToolExecutor；SkillRuntime |
 | docs/design（服务说明文档） | 空闲 | 含注册契约 |
-| 表示层 / frontend | 空闲 | 含 Studio 画布（draft/保存/发布/新草稿） |
-| 应用层 / api | 空闲 | POST /auth/register |
+| 表示层 / frontend | 空闲 | Studio 下钻；HITL 待办与会话恢复 |
+| 应用层 / api | 空闲 | HITL 待办列表与 resume |
 | 服务层 / service/guardrail | 空闲 | GuardrailEvaluator / PolicyDetector 预留 |
 
 未列出的模块视为 **空闲**。
 
 ## 施工简报
 
+- 2026-08-20 子图下钻与 HITL：Studio 面包屑只读下钻已发布子图；`GET/POST /conversations/workflow/hitl-pendings`；属主/超管；SSE `run_interrupted`。pytest `test_api_hitl` + SSE 机 9 passed；`npm run build` 通过。
 - 2026-08-20 Studio 画布：`@xyflow/react`；`/studio` 列表与 `/studio/:flowId` 编辑器；坐标只写 `view`；拓扑走 nodes/edges/branches；`can_control` 才保存/发布/新草稿。`npm run build` 通过。
 - 2026-08-20 登录跳转：`RequireAuth` / `GuestOnly` 在子组件渲染时判定会话，避免父级 `element` 冻住未登录状态。登录/注册成功进入 `AppShell`；已登录访问登录/注册页重定向 `/`。`npm run build` 通过。
 - 2026-08-20 自助注册：`POST /api/v1/auth/register`；default 组织；首个未删除用户为超管；登录页「注册」入口。pytest `test_register_and_conflict` 通过；`npm run build` 通过。

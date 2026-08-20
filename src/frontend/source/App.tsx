@@ -10,6 +10,7 @@ import { isLoggedIn } from "@/auth/session";
 import { AppShell } from "@/layouts/AppShell";
 import { AgentConfigPage } from "@/pages/AgentConfigPage";
 import { ChatPage } from "@/pages/ChatPage";
+import { HitlInboxPage } from "@/pages/HitlInboxPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { ModelsPage } from "@/pages/ModelsPage";
 import { RegisterPage } from "@/pages/RegisterPage";
@@ -93,6 +94,14 @@ function AuthedApp(): ReactElement {
             element={
               <Guard appKey="conversation" apps={apps}>
                 <ChatPage scene="workflow" />
+              </Guard>
+            }
+          />
+          <Route
+            path="/hitl"
+            element={
+              <Guard appKey="conversation" apps={apps}>
+                <HitlInboxPage />
               </Guard>
             }
           />

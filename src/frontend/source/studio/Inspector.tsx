@@ -31,6 +31,7 @@ interface Props {
   onChangeBranch: (branch: FlowBranch) => void;
   onConvertEdge: (edgeId: string) => void;
   onDelete: () => void;
+  onDrill?: (flowCode: string, version: number | null) => void;
 }
 
 const CHANNELS: ChannelName[] = ["messages", "variables", "metadata"];
@@ -66,6 +67,7 @@ export function Inspector(props: Props): ReactElement {
         publishedCodes={props.publishedCodes}
         onChange={props.onChangeNode}
         onDelete={props.onDelete}
+        onDrill={props.onDrill}
       />
     );
   }
@@ -102,6 +104,7 @@ function NodeForm({
   publishedCodes,
   onChange,
   onDelete,
+  onDrill,
 }: {
   node: FlowNode;
   readOnly: boolean;
@@ -110,6 +113,7 @@ function NodeForm({
   publishedCodes: PublishedFlowCodeOut[];
   onChange: (node: FlowNode) => void;
   onDelete: () => void;
+  onDrill?: (flowCode: string, version: number | null) => void;
 }): ReactElement {
   const [form] = Form.useForm<Record<string, unknown>>();
 
@@ -190,6 +194,7 @@ function NodeForm({
   };
 
   return (
+    <>
     <Form form={form} layout="vertical" disabled={readOnly} onFinish={() => void apply()}>
       <Typography.Title level={5}>{node.type}</Typography.Title>
       <Form.Item name="title" label="标题">
@@ -306,6 +311,20 @@ function NodeForm({
         </>
       )}
     </Form>
+    {node.type === "subgraph" && onDrill !== undefined && String(node.data.flow_code ?? "").trim() !== "" ? (
+      <Button
+        style={{ marginTop: 8 }}
+        block
+        onClick={() => {
+          const code = String(node.data.flow_code);
+          const ver = typeof node.data.version === "number" ? node.data.version : null;
+          onDrill(code, ver);
+        }}
+      >
+        下钻
+      </Button>
+    ) : null}
+    </>
   );
 }
 

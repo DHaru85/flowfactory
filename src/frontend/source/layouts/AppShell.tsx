@@ -1,4 +1,5 @@
 import {
+  AuditOutlined,
   ApiOutlined,
   ApartmentOutlined,
   CommentOutlined,
@@ -31,6 +32,11 @@ export function AppShell(): ReactElement {
         key: "/workflow",
         icon: <CommentOutlined />,
         label: <Link to="/workflow">工作流会话</Link>,
+      });
+      result.push({
+        key: "/hitl",
+        icon: <AuditOutlined />,
+        label: <Link to="/hitl">HITL 待办</Link>,
       });
     }
     if (findApp(apps, "studio")?.can_use) {

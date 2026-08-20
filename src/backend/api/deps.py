@@ -17,7 +17,7 @@ from service.auth.schemas import TokenClaims
 from service.auth.service import AuthService
 from service.database.session import get_db_session, session_scope
 from service.persistence.factory import get_repositories
-from service.runtime.schemas import StartRunRequest
+from service.runtime.schemas import HitlResumeInput, HitlResumeOutput, StartRunRequest
 from service.runtime.service import WorkflowRuntimeService
 
 _bearer = HTTPBearer(auto_error=False)
@@ -104,7 +104,12 @@ class FakeWorkflowRuntime(WorkflowRuntimeService):
 
     def __init__(self) -> None:
         self.requests: list[StartRunRequest] = []
+        self.resumes: list[HitlResumeInput] = []
 
     async def start(self, request: StartRunRequest) -> UUID:
         self.requests.append(request)
         return uuid4()
+
+    async def resume(self, hitl: HitlResumeInput) -> HitlResumeOutput:
+        self.resumes.append(hitl)
+        return HitlResumeOutput(run_id=uuid4(), resumed=hitl.decision == "approve")

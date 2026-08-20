@@ -20,6 +20,7 @@ import { errorMessage } from "@/api/client";
 import {
   getStudioFlow,
   listPublishedFlowCodes,
+  listStudioFlows,
   listStudioLlms,
   listStudioProfiles,
   listStudioTools,
@@ -56,6 +57,19 @@ import type {
   PublishedFlowCodeOut,
   ToolCatalogOut,
 } from "@/types";
+
+const DRILL_MAX_DEPTH = 8;
+
+interface DrillFrame {
+  flowId: string;
+  code: string;
+  version: number;
+  document: FlowDefinitionV1;
+}
+
+function frameKey(code: string, version: number): string {
+  return `${code}@${version}`;
+}
 
 const nodeTypes = { typed: TypedFlowNode };
 
@@ -131,8 +145,12 @@ function StudioCanvasInner(): ReactElement {
   const [llms, setLlms] = useState<LlmCatalogOut[]>([]);
   const [tools, setTools] = useState<ToolCatalogOut[]>([]);
   const [publishedCodes, setPublishedCodes] = useState<PublishedFlowCodeOut[]>([]);
+  const [stack, setStack] = useState<DrillFrame[]>([]);
 
-  const readOnly = !canControl || flow?.status !== "draft";
+  const rootReadOnly = !canControl || flow?.status !== "draft";
+  const readOnly = rootReadOnly || stack.length > 0;
+  const viewingDocument =
+    stack.length > 0 ? stack[stack.length - 1].document : document;
 
   const load = useCallback(async (id: string) => {
     const row = await getStudioFlow(id);
@@ -142,6 +160,7 @@ function StudioCanvasInner(): ReactElement {
     setProfileId(row.profile_id);
     setDirty(false);
     setSelection(null);
+    setStack([]);
   }, []);
 
   useEffect(() => {
@@ -168,17 +187,52 @@ function StudioCanvasInner(): ReactElement {
   }, []);
 
   useEffect(() => {
-    if (document === null) {
+    if (viewingDocument === null) {
       return;
     }
-    setNodes(toRfNodes(document, readOnly));
-    setEdges(toRfEdges(document));
-  }, [document, readOnly]);
+    setNodes(toRfNodes(viewingDocument, readOnly));
+    setEdges(toRfEdges(viewingDocument));
+  }, [viewingDocument, readOnly]);
 
   const mutate = useCallback((next: FlowDefinitionV1) => {
     setDocument(next);
     setDirty(true);
   }, []);
+
+  const drillInto = async (flowCode: string, version: number | null): Promise<void> => {
+    if (flow === null || document === null) {
+      return;
+    }
+    if (1 + stack.length >= DRILL_MAX_DEPTH) {
+      message.warning("下钻深度已达上限");
+      return;
+    }
+    const rows = await listStudioFlows("published", flowCode);
+    if (rows.length === 0) {
+      message.error("未找到已发布的子图");
+      return;
+    }
+    const target =
+      version === null
+        ? rows.reduce((best, row) => (row.version > best.version ? row : best))
+        : rows.find((row) => row.version === version);
+    if (target === undefined) {
+      message.error("未找到指定版本的子图");
+      return;
+    }
+    const key = frameKey(target.code, target.version);
+    const seen = [frameKey(flow.code, flow.version), ...stack.map((item) => frameKey(item.code, item.version))];
+    if (seen.includes(key)) {
+      message.warning("子图引用成环，已拒绝下钻");
+      return;
+    }
+    const full = await getStudioFlow(target.id);
+    setStack((prev) => [
+      ...prev,
+      { flowId: full.id, code: full.code, version: full.version, document: full.definition },
+    ]);
+    setSelection(null);
+  };
 
   const onNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
@@ -342,7 +396,7 @@ function StudioCanvasInner(): ReactElement {
     return { nodes: [] as string[], edges: [] as string[] };
   }, [edges, selection]);
 
-  if (flow === null || document === null) {
+  if (flow === null || document === null || viewingDocument === null) {
     return <Typography.Text>加载中…</Typography.Text>;
   }
 
@@ -358,9 +412,24 @@ function StudioCanvasInner(): ReactElement {
         }}
       >
         <Link to="/studio">返回列表</Link>
+        <Button type="link" onClick={() => { setStack([]); setSelection(null); }}>
+          {flow.code}@{flow.version}
+        </Button>
+        {stack.map((frame, idx) => (
+          <Button
+            key={`${frame.flowId}-${idx}`}
+            type="link"
+            onClick={() => {
+              setStack((prev) => prev.slice(0, idx + 1));
+              setSelection(null);
+            }}
+          >
+            / {frame.code}@{frame.version}
+          </Button>
+        ))}
         <Typography.Text>
-          {flow.code}@{flow.version} · {flow.status}
-          {dirty ? " · 未保存" : ""}
+          {stack.length > 0 ? "只读子图" : flow.status}
+          {dirty && stack.length === 0 ? " · 未保存" : ""}
         </Typography.Text>
         <Input
           value={name}
@@ -451,12 +520,17 @@ function StudioCanvasInner(): ReactElement {
         </div>
         <div style={{ width: 320, borderLeft: "1px solid #f0f0f0", padding: 12, overflow: "auto" }}>
           <Inspector
-            document={document}
+            document={viewingDocument}
             selection={selection}
             readOnly={readOnly}
             llms={llms}
             tools={tools}
             publishedCodes={publishedCodes}
+            onDrill={(code, version) => {
+              void drillInto(code, version).catch((err: unknown) =>
+                message.error(errorMessage(err, "下钻失败")),
+              );
+            }}
             onChangeNode={(node) => mutate(replaceNode(document, node))}
             onChangeEdge={(edge) => mutate(replaceEdge(document, edge))}
             onChangeBranch={(branch) => mutate(replaceBranch(document, branch))}

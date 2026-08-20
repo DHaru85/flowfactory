@@ -81,6 +81,9 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET/POST | `/workflow` | 创建可带 `flow_id`；`app_key=workflow` |
+| GET | `/workflow/hitl-pendings` | 属主或超管的 pending HITL；可选 `run_id` |
+| GET | `/workflow/hitl-pendings/{hitl_id}` | 越权 `404 hitl_not_found` |
+| POST | `/workflow/hitl-pendings/{hitl_id}/resume` | `decision` + 可选 `user_input`；非 pending `400 hitl_not_resumable` |
 | GET | `/workflow/{id}` | 详情含 `metadata` |
 | GET | `/workflow/{id}/messages` | 消息列表 |
 | POST | `/workflow/messages` | 与下方兼容发消息相同，新建会话 `app_key=workflow` |
@@ -124,7 +127,7 @@
 | --- | --- | --- |
 | `connected` | 仅由 `subscribe` 产生 | `data.state` |
 | `run_submitted` | subscribed / completed / failed | `data.run_id` / `message_id` |
-| `speaking` / `reasoning` / `tool_calling` / `step_running` / `subagent_running` | subscribed 或 run_active | worker 流式出词走 `speaking`；token 不经护栏 |
+| `speaking` / `reasoning` / `tool_calling` / `step_running` / `subagent_running` / `run_interrupted` | subscribed 或 run_active | `run_interrupted` 保持 run_active，`data.hitl_id` / `node_id` / `prompt` |
 | `run_completed` / `run_failed` | run_active | 控制事件 |
 
 非法转移：状态机抛出 `StreamProtocolError`；SSE 连接上记录 warning 并丢弃该帧，不断开。

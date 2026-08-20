@@ -2,6 +2,7 @@
 
 | 时间 | 涉及模块 | 相关需求 | 变更说明 |
 | --- | --- | --- | --- |
+| 2026.08.20 16:12 | conversation / Studio / runtime | 子图下钻与 HITL 恢复 | 画布只读下钻；HITL 待办 HTTP；SSE `run_interrupted` |
 | 2026.08.20 15:50 | auth / 表示层 | 自助注册 | POST /auth/register；首位用户超管；登录页增加注册入口 |
 | 2026.08.20 15:35 | docs/design/data_schema_client.md | 表示层数据结构 | 按 HTTP/SSE 现网契约编写客户端三类形态；未开放 HTTP 的域保留空章 |
 | 2026.08.18 14:06 | - | - | 添加项目整体架构选型和施工规范说明 |

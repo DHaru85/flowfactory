@@ -2,6 +2,9 @@ import { http } from "@/api/client";
 import type {
   ConversationDetailOut,
   ConversationOut,
+  HitlPendingOut,
+  HitlResumeBody,
+  HitlResumeOut,
   MessageOut,
   SendMessageOut,
 } from "@/types";
@@ -64,5 +67,20 @@ export async function sendWorkflowMessage(body: {
     ...body,
     app_key: "workflow",
   });
+  return data;
+}
+
+export async function listHitlPendings(runId?: string): Promise<HitlPendingOut[]> {
+  const { data } = await http.get<HitlPendingOut[]>("/conversations/workflow/hitl-pendings", {
+    params: runId ? { run_id: runId } : {},
+  });
+  return data;
+}
+
+export async function resumeHitl(hitlId: string, body: HitlResumeBody): Promise<HitlResumeOut> {
+  const { data } = await http.post<HitlResumeOut>(
+    `/conversations/workflow/hitl-pendings/${hitlId}/resume`,
+    body,
+  );
   return data;
 }

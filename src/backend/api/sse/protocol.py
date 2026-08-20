@@ -14,6 +14,7 @@ ProtocolEventName = Literal[
     "run_submitted",
     "run_completed",
     "run_failed",
+    "run_interrupted",
     "speaking",
     "reasoning",
     "tool_calling",
@@ -23,7 +24,14 @@ ProtocolEventName = Literal[
 
 CONTROL_EVENTS = frozenset({"connected", "run_submitted", "run_completed", "run_failed"})
 DELTA_EVENTS = frozenset(
-    {"speaking", "reasoning", "tool_calling", "step_running", "subagent_running"}
+    {
+        "speaking",
+        "reasoning",
+        "tool_calling",
+        "step_running",
+        "subagent_running",
+        "run_interrupted",
+    }
 )
 
 

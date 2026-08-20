@@ -14,6 +14,9 @@ from api.apps.conversation.schemas import (
     ConversationCreateBody,
     ConversationDetailOut,
     ConversationOut,
+    HitlPendingOut,
+    HitlResumeBody,
+    HitlResumeOut,
     MessageOut,
     PlannerConversationCreateBody,
     PlannerSendMessageBody,
@@ -30,10 +33,12 @@ from api.sse.bus import publish_sse
 from api.sse.protocol import run_submitted_event
 from api.sse.stream import conversation_sse_iter
 from data_schema.conversation.models import Conversation, Message
+from data_schema.workflow.models import HitlPending, RunSnapshot
 from service.auth.access import AccessControl
 from service.database.session import session_scope
 from service.persistence.factory import get_repositories
-from service.runtime.schemas import RunStatePayload, StartRunRequest
+from service.runtime.constants import HITL_PENDING
+from service.runtime.schemas import HitlResumeInput, RunStatePayload, StartRunRequest
 from service.runtime.service import WorkflowRuntimeService
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["conversation"])
@@ -80,6 +85,58 @@ def _to_msg_out(row: Message) -> MessageOut:
         content_blocks=list(row.content_blocks),
         status=row.status,
     )
+
+
+def _hitl_form_schema(pending: HitlPending) -> dict[str, object] | None:
+    stored = pending.resume_payload if isinstance(pending.resume_payload, dict) else None
+    if stored is None:
+        return None
+    raw = stored.get("form_schema")
+    if isinstance(raw, dict):
+        return dict(raw)
+    return None
+
+
+def _to_hitl_out(pending: HitlPending, run: RunSnapshot) -> HitlPendingOut:
+    return HitlPendingOut(
+        id=pending.id,
+        run_id=pending.run_id,
+        conversation_id=run.conversation_id,
+        node_id=pending.node_id,
+        prompt=pending.prompt,
+        form_schema=_hitl_form_schema(pending),
+        status=pending.status,
+        expires_at=pending.expires_at,
+    )
+
+
+async def _current_is_superuser(session: AsyncSession, current: CurrentUser) -> bool:
+    repos = get_repositories(session)
+    user = await repos.permission.user.get(current.id)
+    return user is not None and user.is_superuser
+
+
+async def _hitl_visible(
+    session: AsyncSession,
+    current: CurrentUser,
+    hitl_id: UUID,
+) -> tuple[HitlPending, RunSnapshot]:
+    repos = get_repositories(session)
+    pending = await repos.workflow.hitl.get(hitl_id)
+    if pending is None:
+        raise http_error(404, "hitl_not_found", "待办不存在")
+    run = await repos.workflow.run.get(pending.run_id)
+    if run is None:
+        raise http_error(404, "hitl_not_found", "待办不存在")
+    if await _current_is_superuser(session, current):
+        return pending, run
+    if run.user_id != current.id:
+        raise http_error(404, "hitl_not_found", "待办不存在")
+    if run.conversation_id is not None:
+        conv = await repos.conversation.conversation.get(run.conversation_id)
+        if conv is None or conv.user_id != current.id:
+            raise http_error(404, "hitl_not_found", "待办不存在")
+    return pending, run
 
 
 def _sse_response(conversation_id: UUID) -> StreamingResponse:
@@ -428,6 +485,51 @@ async def send_workflow_message(
     return await _send_workflow_message(
         body, current, session, runtime, APP_KEY_WORKFLOW
     )
+
+
+@router.get("/workflow/hitl-pendings", response_model=list[HitlPendingOut])
+async def list_workflow_hitl_pendings(
+    current: CurrentUser = Depends(_use_conversation),
+    session: AsyncSession = Depends(db_session),
+    run_id: UUID | None = None,
+) -> list[HitlPendingOut]:
+    repos = get_repositories(session)
+    owner_id = None if await _current_is_superuser(session, current) else current.id
+    rows = await repos.workflow.list_pending_hitl(user_id=owner_id, run_id=run_id)
+    result: list[HitlPendingOut] = []
+    for pending in rows:
+        run = await repos.workflow.run.get(pending.run_id)
+        if run is None:
+            continue
+        result.append(_to_hitl_out(pending, run))
+    return result
+
+
+@router.get("/workflow/hitl-pendings/{hitl_id}", response_model=HitlPendingOut)
+async def get_workflow_hitl_pending(
+    hitl_id: UUID,
+    current: CurrentUser = Depends(_use_conversation),
+    session: AsyncSession = Depends(db_session),
+) -> HitlPendingOut:
+    pending, run = await _hitl_visible(session, current, hitl_id)
+    return _to_hitl_out(pending, run)
+
+
+@router.post("/workflow/hitl-pendings/{hitl_id}/resume", response_model=HitlResumeOut)
+async def resume_workflow_hitl(
+    hitl_id: UUID,
+    body: HitlResumeBody,
+    current: CurrentUser = Depends(_use_conversation),
+    session: AsyncSession = Depends(db_session),
+    runtime: WorkflowRuntimeService = Depends(get_workflow_runtime),
+) -> HitlResumeOut:
+    pending, _run = await _hitl_visible(session, current, hitl_id)
+    if pending.status != HITL_PENDING:
+        raise http_error(400, "hitl_not_resumable", "待办不可恢复")
+    output = await runtime.resume(
+        HitlResumeInput(hitl_id=pending.id, decision=body.decision, user_input=body.user_input)
+    )
+    return HitlResumeOut(run_id=output.run_id, resumed=output.resumed)
 
 
 @router.get("/workflow/{conversation_id}", response_model=ConversationDetailOut)

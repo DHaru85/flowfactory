@@ -138,13 +138,19 @@ async def _finalize_assistant_message(
             row.content_blocks = [{"type": "text", "text": text}]
 
 
-async def _publish_lifecycle(name: str, ctx: StreamPublishContext) -> None:
+async def _publish_lifecycle(
+    name: str,
+    ctx: StreamPublishContext,
+    extra: dict[str, object] | None = None,
+) -> None:
     if ctx.conversation_id is None:
         return
     try:
         await get_stream_bus().publish(
             ctx.conversation_id,
-            run_lifecycle_event(name, run_id=ctx.run_id, message_id=ctx.message_id),
+            run_lifecycle_event(
+                name, run_id=ctx.run_id, message_id=ctx.message_id, extra=extra
+            ),
         )
     except Exception:
         logger.warning("生命周期事件投递失败 event={} run_id={}", name, ctx.run_id)
@@ -314,6 +320,7 @@ async def execute_envelope(
                         await evaluator.flush(session)
                 return {"run_id": str(run_row_id), "status": final_status}
 
+        hitl_id: UUID | None = None
         async with session_scope() as session:
             repos = get_repositories(session)
             run = await repos.workflow.run.get(run_row_id)
@@ -321,13 +328,17 @@ async def execute_envelope(
                 raise ValueError("Run 丢失")
             if interrupted:
                 on_reject = str(payload.get("on_reject") or "fail")
-                await create_pending(
+                raw_schema = payload.get("form_schema")
+                form_schema = raw_schema if isinstance(raw_schema, dict) else None
+                pending = await create_pending(
                     session,
                     run=run,
                     node_id=node_id,
                     prompt=prompt,
                     on_reject=on_reject,
+                    form_schema=form_schema,
                 )
+                hitl_id = pending.id
             else:
                 run.status = RUN_COMPLETED
                 run.output_payload = _strip_interrupt(result_dict)
@@ -344,6 +355,16 @@ async def execute_envelope(
                     rec.status = CELERY_SUCCESS
                     rec.finished_at = datetime.now(UTC)
 
+        if interrupted and hitl_id is not None:
+            await _publish_lifecycle(
+                "run_interrupted",
+                stream_ctx,
+                extra={
+                    "hitl_id": str(hitl_id),
+                    "node_id": node_id,
+                    "prompt": prompt,
+                },
+            )
         if not interrupted:
             await notify_parent_of_child(completed_run, status="completed")
         collector.end_trace("ok")

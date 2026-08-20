@@ -1,5 +1,5 @@
 import { Bubble, Conversations, Sender } from "@ant-design/x";
-import { Button, Flex, Input, Select, Typography, message } from "antd";
+import { Button, Flex, Input, Select, Space, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { listProfiles } from "@/api/agentConfig";
@@ -8,7 +8,9 @@ import {
   createPlannerConversation,
   createWorkflowConversation,
   listConversations,
+  listHitlPendings,
   listMessages,
+  resumeHitl,
   sendPlannerMessage,
   sendWorkflowMessage,
   type ChatScene,
@@ -16,7 +18,7 @@ import {
 import { listStudioFlows, listStudioProfiles } from "@/api/studio";
 import { findApp, useSession } from "@/auth/context";
 import { subscribeConversationEvents } from "@/sse/client";
-import type { ConversationOut, MessageContentBlock, MessageOut, SseFrame } from "@/types";
+import type { ConversationOut, HitlPendingOut, MessageContentBlock, MessageOut, SseFrame } from "@/types";
 
 function blocksToText(blocks: MessageContentBlock[]): string {
   return blocks
@@ -44,6 +46,8 @@ export function ChatPage({ scene }: Props): ReactElement {
   const [profileId, setProfileId] = useState<string | null>(null);
   const [flowId, setFlowId] = useState<string | null>(null);
   const [flowOptions, setFlowOptions] = useState<{ id: string; label: string }[]>([]);
+  const [hitl, setHitl] = useState<HitlPendingOut | null>(null);
+  const [hitlInput, setHitlInput] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
   const reloadConvs = useCallback(async () => {
@@ -89,6 +93,13 @@ export function ChatPage({ scene }: Props): ReactElement {
       return;
     }
     void reloadMessages(activeId).catch((err: unknown) => message.error(errorMessage(err, "加载消息失败")));
+    if (scene === "workflow") {
+      void listHitlPendings()
+        .then((rows) => setHitl(rows.find((row) => row.conversation_id === activeId) ?? null))
+        .catch(() => setHitl(null));
+    } else {
+      setHitl(null);
+    }
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -105,6 +116,16 @@ export function ChatPage({ scene }: Props): ReactElement {
         }
         if (frame.event === "run_completed" || frame.event === "run_failed") {
           void reloadMessages(activeId);
+          setHitl(null);
+        }
+        if (frame.event === "run_interrupted" && scene === "workflow") {
+          const hid = String(frame.data.hitl_id ?? "");
+          void listHitlPendings()
+            .then((rows) => {
+              const found = hid ? rows.find((row) => row.id === hid) : rows.find((row) => row.conversation_id === activeId);
+              setHitl(found ?? null);
+            })
+            .catch(() => undefined);
         }
       },
       ac.signal,
@@ -218,6 +239,54 @@ export function ChatPage({ scene }: Props): ReactElement {
           }}
           items={bubbleItems}
         />
+        {scene === "workflow" && hitl !== null ? (
+          <Flex vertical gap={8} style={{ border: "1px solid #ffe58f", background: "#fffbe6", padding: 12, borderRadius: 8 }}>
+            <Typography.Text strong>人工待办 · {hitl.node_id}</Typography.Text>
+            <Typography.Paragraph style={{ marginBottom: 0 }}>{hitl.prompt}</Typography.Paragraph>
+            <Input.TextArea
+              rows={3}
+              value={hitlInput}
+              onChange={(ev) => setHitlInput(ev.target.value)}
+              placeholder="可选说明或表单 JSON"
+            />
+            <Space>
+              <Button
+                type="primary"
+                onClick={() => {
+                  void resumeHitl(hitl.id, {
+                    decision: "approve",
+                    user_input: hitlInput.trim() === "" ? null : hitlInput.trim(),
+                  })
+                    .then(() => {
+                      setHitl(null);
+                      setHitlInput("");
+                      message.success("已批准");
+                    })
+                    .catch((err: unknown) => message.error(errorMessage(err, "恢复失败")));
+                }}
+              >
+                批准
+              </Button>
+              <Button
+                danger
+                onClick={() => {
+                  void resumeHitl(hitl.id, {
+                    decision: "reject",
+                    user_input: hitlInput.trim() === "" ? null : hitlInput.trim(),
+                  })
+                    .then(() => {
+                      setHitl(null);
+                      setHitlInput("");
+                      message.success("已拒绝");
+                    })
+                    .catch((err: unknown) => message.error(errorMessage(err, "恢复失败")));
+                }}
+              >
+                拒绝
+              </Button>
+            </Space>
+          </Flex>
+        ) : null}
         <Sender
           value={input}
           onChange={setInput}

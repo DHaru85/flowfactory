@@ -30,14 +30,18 @@ async def create_pending(
     node_id: str,
     prompt: str,
     on_reject: str = "fail",
+    form_schema: dict[str, object] | None = None,
 ) -> HitlPending:
     cfg = get_settings()
     now = datetime.now(UTC)
+    payload: dict[str, object] = {"on_reject": on_reject}
+    if form_schema is not None:
+        payload["form_schema"] = form_schema
     pending = HitlPending(
         run_id=run.id,
         node_id=node_id,
         prompt=prompt,
-        resume_payload={"on_reject": on_reject},
+        resume_payload=payload,
         status=HITL_PENDING,
         expires_at=now + timedelta(seconds=cfg.hitl_default_ttl_seconds),
     )

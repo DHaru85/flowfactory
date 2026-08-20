@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -60,3 +62,24 @@ class SendMessageOut(BaseModel):
     user_message_id: UUID
     assistant_message_id: UUID
     run_id: UUID
+
+
+class HitlPendingOut(BaseModel):
+    id: UUID
+    run_id: UUID
+    conversation_id: UUID | None
+    node_id: str
+    prompt: str
+    form_schema: dict[str, object] | None
+    status: str
+    expires_at: datetime | None
+
+
+class HitlResumeBody(BaseModel):
+    decision: Literal["approve", "reject"]
+    user_input: str | None = None
+
+
+class HitlResumeOut(BaseModel):
+    run_id: UUID
+    resumed: bool

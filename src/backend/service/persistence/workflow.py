@@ -36,13 +36,18 @@ class WorkflowRepository:
         )
         return await self._session.scalar(stmt)
 
-    async def list_pending_hitl(self, user_id: uuid.UUID | None = None) -> list[HitlPending]:
+    async def list_pending_hitl(
+        self,
+        user_id: uuid.UUID | None = None,
+        run_id: uuid.UUID | None = None,
+    ) -> list[HitlPending]:
         stmt = select(HitlPending).where(HitlPending.status == "pending")
+        if user_id is not None or run_id is not None:
+            stmt = stmt.join(RunSnapshot, RunSnapshot.id == HitlPending.run_id)
         if user_id is not None:
-            stmt = stmt.join(
-                RunSnapshot,
-                RunSnapshot.id == HitlPending.run_id,
-            ).where(RunSnapshot.user_id == user_id)
+            stmt = stmt.where(RunSnapshot.user_id == user_id)
+        if run_id is not None:
+            stmt = stmt.where(HitlPending.run_id == run_id)
         result = await self._session.scalars(stmt)
         return list(result.all())
 

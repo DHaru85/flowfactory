@@ -701,7 +701,7 @@ Studio：可见可用 → 列表/详情/目录；完全控制 → 草稿/发布/
 | `form_schema` | `Record<string, unknown> \| null` | 待办表单 JSON Schema |
 | `on_reject` | `"fail" \| "route"` | `route` 走 `hitl_decision` 分支 |
 
-HITL **恢复 HTTP 本轮未开放**；节点仍可出现在图上。待办列表见工作流空章。
+HITL **恢复 HTTP** 见「Workflow Execution」：会话属主或超管可列出/恢复 `pending`。节点仍可出现在图上。
 
 #### Subgraph Node Data
 
@@ -980,24 +980,49 @@ JSON 字段名 **`schema`**（参数 JSON Schema），不是 `parameter_schema`�
 
 ## Workflow Execution and Scheduling
 
-会话发消息已返回 `run_id` 与 SSE 生命周期。**Run 列表、取消、HITL 待办恢复、子图等待管理等 HTTP 未开放**。
+会话发消息已返回 `run_id` 与 SSE 生命周期。HITL 待办与恢复已开放；**Run 列表、取消、子图 waiting 管理 HTTP 仍未开放**。
 
 会话行**没有** `run_id` 外键；前端用 `SendMessageOut.run_id` 与 SSE `data.run_id` 关联本轮执行。
 
 ### 传输对象
 
-本轮仅复用：
+#### HitlPendingOut
 
-- `SendMessageOut.run_id`
-- SSE：`run_submitted` / `run_completed` / `run_failed`
+`GET /api/v1/conversations/workflow/hitl-pendings`、`GET .../hitl-pendings/{hitl_id}`。仅 `status=pending` 出现在列表。越权或不存在 `404 hitl_not_found`。
 
-下列待补：`RunOut`、`HitlPendingOut`、`HitlResumeBody`、`CancelRunBody`、子图 pending 列表。
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `string (UUID)` | 待办 id |
+| `run_id` | `string (UUID)` | |
+| `conversation_id` | `string (UUID) \| null` | 来自 Run |
+| `node_id` | `string` | 中断节点 |
+| `prompt` | `string` | |
+| `form_schema` | `Record<string, unknown> \| null` | 写入 pending 的表单 schema |
+| `status` | `string` | 列表恒为 `pending` |
+| `expires_at` | `string \| null` | ISO 8601 |
 
-服务端状态枚举（开放列表 API 时应对齐，**现在不要请求**）：`pending` / `running` / `interrupted` / `waiting_child` / `completed` / `failed` / `cancelled`。
+查询：`run_id` 可选。普通人只看自己 Run 的待办；`is_superuser` 可看全部。
+
+#### HitlResumeBody / HitlResumeOut
+
+`POST .../hitl-pendings/{hitl_id}/resume`。非 pending：`400 hitl_not_resumable`。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `decision` | `"approve" \| "reject"` | |
+| `user_input` | `string \| null` | 可选 |
+| `run_id`（出） | `string (UUID)` | |
+| `resumed`（出） | `boolean` | `reject` 且 `on_reject=fail` 时为 false |
+
+本轮另复用：`SendMessageOut.run_id`；SSE：`run_submitted` / `run_interrupted` / `run_completed` / `run_failed`。
+
+下列仍待补：`RunOut`、`CancelRunBody`、子图 pending 列表。
+
+服务端 Run 状态枚举：`pending` / `running` / `interrupted` / `waiting_child` / `completed` / `failed` / `cancelled`。
 
 ### 可运行对象
 
-（待补：`RunMonitorClient`。当前用 `ConversationSseClient` 观察一轮执行即可。）
+（待补：`RunMonitorClient`。HITL 用待办 API；一轮执行仍用 `ConversationSseClient`。）
 
 ### 视图模型
 

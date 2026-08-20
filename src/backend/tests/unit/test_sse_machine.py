@@ -33,6 +33,12 @@ def test_happy_path_and_next_turn() -> None:
     assert spoken[0].event == "speaking"
     assert sm.state == StreamState.RUN_ACTIVE
 
+    interrupted = sm.apply_event(
+        SseEvent(event="run_interrupted", data={"run_id": "r", "hitl_id": str(uuid4())})
+    )
+    assert interrupted[0].event == "run_interrupted"
+    assert sm.state == StreamState.RUN_ACTIVE
+
     sm.apply_event(SseEvent(event="run_completed", data={}))
     assert sm.state == StreamState.COMPLETED
 

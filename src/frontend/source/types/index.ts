@@ -168,6 +168,27 @@ export interface SendMessageOut {
   run_id: string;
 }
 
+export interface HitlPendingOut {
+  id: string;
+  run_id: string;
+  conversation_id: string | null;
+  node_id: string;
+  prompt: string;
+  form_schema: Record<string, unknown> | null;
+  status: string;
+  expires_at: string | null;
+}
+
+export interface HitlResumeBody {
+  decision: "approve" | "reject";
+  user_input?: string | null;
+}
+
+export interface HitlResumeOut {
+  run_id: string;
+  resumed: boolean;
+}
+
 export interface PublishedFlowCodeOut {
   code: string;
   version: number;
@@ -306,7 +327,8 @@ export type SseEventName =
   | "step_running"
   | "subagent_running"
   | "run_completed"
-  | "run_failed";
+  | "run_failed"
+  | "run_interrupted";
 
 export interface SseFrame {
   event: string;

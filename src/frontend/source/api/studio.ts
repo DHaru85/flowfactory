@@ -31,9 +31,9 @@ export async function listPublishedFlowCodes(): Promise<PublishedFlowCodeOut[]> 
   return data;
 }
 
-export async function listStudioFlows(status?: string): Promise<FlowOut[]> {
+export async function listStudioFlows(status?: string, code?: string): Promise<FlowOut[]> {
   const { data } = await http.get<FlowOut[]>("/studio/flows", {
-    params: { limit: 50, ...(status ? { status } : {}) },
+    params: { limit: 50, ...(status ? { status } : {}), ...(code ? { code } : {}) },
   });
   return data;
 }

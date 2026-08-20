@@ -51,10 +51,13 @@ def run_lifecycle_event(
     *,
     run_id: UUID,
     message_id: UUID | None = None,
+    extra: dict[str, object] | None = None,
 ) -> StreamEvent:
     payload: dict[str, object] = {"run_id": str(run_id)}
     if message_id is not None:
         payload["message_id"] = str(message_id)
+    if extra:
+        payload.update(extra)
     return StreamEvent(event=name, data=payload)
 
 
