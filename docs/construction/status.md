@@ -26,7 +26,7 @@
 | 服务层 / service/auth | 空闲 | AccessControl；本地自助注册 |
 | 服务层 / service/tools | 空闲 | ToolExecutor；SkillRuntime |
 | docs/design（服务说明文档） | 空闲 | 含注册契约 |
-| 表示层 / frontend | 空闲 | 含登录/注册页；登录后进入菜单布局 |
+| 表示层 / frontend | 空闲 | 含 Studio 画布（draft/保存/发布/新草稿） |
 | 应用层 / api | 空闲 | POST /auth/register |
 | 服务层 / service/guardrail | 空闲 | GuardrailEvaluator / PolicyDetector 预留 |
 
@@ -34,6 +34,7 @@
 
 ## 施工简报
 
+- 2026-08-20 Studio 画布：`@xyflow/react`；`/studio` 列表与 `/studio/:flowId` 编辑器；坐标只写 `view`；拓扑走 nodes/edges/branches；`can_control` 才保存/发布/新草稿。`npm run build` 通过。
 - 2026-08-20 登录跳转：`RequireAuth` / `GuestOnly` 在子组件渲染时判定会话，避免父级 `element` 冻住未登录状态。登录/注册成功进入 `AppShell`；已登录访问登录/注册页重定向 `/`。`npm run build` 通过。
 - 2026-08-20 自助注册：`POST /api/v1/auth/register`；default 组织；首个未删除用户为超管；登录页「注册」入口。pytest `test_register_and_conflict` 通过；`npm run build` 通过。
 - 2026-08-20 表示层首轮：`src/frontend` Vite + React + Antd / Ant Design X。登录 JWT、`/auth/apps` 菜单、models（密钥只写）、agent_config 与绑定、planner/workflow 会话与 fetch SSE。`npm run build` 通过。Studio 画布仍在 `docs/plan/unreached/`。

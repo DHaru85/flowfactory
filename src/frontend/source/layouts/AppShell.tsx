@@ -1,5 +1,6 @@
 import {
   ApiOutlined,
+  ApartmentOutlined,
   CommentOutlined,
   DeploymentUnitOutlined,
   LogoutOutlined,
@@ -30,6 +31,13 @@ export function AppShell(): ReactElement {
         key: "/workflow",
         icon: <CommentOutlined />,
         label: <Link to="/workflow">工作流会话</Link>,
+      });
+    }
+    if (findApp(apps, "studio")?.can_use) {
+      result.push({
+        key: "/studio",
+        icon: <ApartmentOutlined />,
+        label: <Link to="/studio">Studio</Link>,
       });
     }
     if (findApp(apps, "models")?.can_use) {

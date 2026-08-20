@@ -74,7 +74,7 @@ export function ChatPage({ scene }: Props): ReactElement {
         .catch((err: unknown) => message.error(errorMessage(err, "加载 Profile 失败")));
     }
     if (scene === "workflow" && canStudio) {
-      void listStudioFlows()
+      void listStudioFlows("published")
         .then((rows) => {
           setFlowOptions(rows.map((row) => ({ id: row.id, label: `${row.code}@${row.version}` })));
           setFlowId((cur) => cur ?? rows[0]?.id ?? null);

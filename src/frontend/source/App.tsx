@@ -13,6 +13,8 @@ import { ChatPage } from "@/pages/ChatPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { ModelsPage } from "@/pages/ModelsPage";
 import { RegisterPage } from "@/pages/RegisterPage";
+import { StudioCanvasPage } from "@/pages/StudioCanvasPage";
+import { StudioListPage } from "@/pages/StudioListPage";
 import type { AppVisibilityOut, MeOut } from "@/types";
 
 function HomeRedirect({ apps }: { apps: AppVisibilityOut[] }): ReactElement {
@@ -24,6 +26,9 @@ function HomeRedirect({ apps }: { apps: AppVisibilityOut[] }): ReactElement {
   }
   if (findApp(apps, "agent_config")?.can_use) {
     return <Navigate to="/agent-config" replace />;
+  }
+  if (findApp(apps, "studio")?.can_use) {
+    return <Navigate to="/studio" replace />;
   }
   return <div>当前账号没有可打开的应用，请联系管理员绑定。</div>;
 }
@@ -104,6 +109,22 @@ function AuthedApp(): ReactElement {
             element={
               <Guard appKey="agent_config" apps={apps}>
                 <AgentConfigPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/studio"
+            element={
+              <Guard appKey="studio" apps={apps}>
+                <StudioListPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/studio/:flowId"
+            element={
+              <Guard appKey="studio" apps={apps}>
+                <StudioCanvasPage />
               </Guard>
             }
           />

@@ -173,6 +173,130 @@ export interface PublishedFlowCodeOut {
   version: number;
 }
 
+export type FlowStatus = "draft" | "published" | "archived";
+
+export type NodeType = "start" | "end" | "llm" | "tool" | "assign" | "hitl" | "subgraph" | "custom";
+
+export type ChannelName = "messages" | "variables" | "metadata";
+
+export interface StateChannelSpec {
+  name: ChannelName;
+  reducer: "append" | "merge";
+  json_schema: Record<string, unknown> | null;
+}
+
+export interface GraphStateSpec {
+  channels: StateChannelSpec[];
+}
+
+export interface FlowNode {
+  id: string;
+  type: NodeType;
+  title: string | null;
+  data: Record<string, unknown>;
+}
+
+export interface FlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  label: string | null;
+}
+
+export interface BranchCase {
+  key: string;
+  target: string;
+}
+
+export interface BranchRouter {
+  kind: "state_path" | "expr" | "hitl_decision" | "child_status";
+  path: string | null;
+  expr: string | null;
+}
+
+export interface FlowBranch {
+  id: string;
+  source: string;
+  router: BranchRouter;
+  cases: BranchCase[];
+  default_target: string | null;
+  max_visits: number | null;
+}
+
+export interface NodeLayout {
+  x: number;
+  y: number;
+  w: number | null;
+  h: number | null;
+  z: number | null;
+}
+
+export interface EdgeLayout {
+  waypoints: number[][] | null;
+  color: string | null;
+}
+
+export interface FlowView {
+  nodes: Record<string, NodeLayout>;
+  edges: Record<string, EdgeLayout>;
+  branches: Record<string, EdgeLayout>;
+  groups: Record<string, unknown>[] | null;
+  computed_levels: Record<string, number> | null;
+}
+
+export interface FlowDefinitionV1 {
+  schema_version: 1;
+  state: GraphStateSpec;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  branches: FlowBranch[];
+  view: FlowView | null;
+}
+
+export interface FlowOut {
+  id: string;
+  code: string;
+  name: string;
+  version: number;
+  profile_id: string;
+  status: FlowStatus;
+  published_at: string | null;
+  definition: FlowDefinitionV1;
+}
+
+export interface FlowCreateBody {
+  code: string;
+  name: string;
+  profile_id: string;
+  definition?: FlowDefinitionV1 | null;
+}
+
+export interface FlowPatchBody {
+  name?: string | null;
+  profile_id?: string | null;
+  definition?: FlowDefinitionV1 | null;
+}
+
+export interface ProfileCatalogOut {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface LlmCatalogOut {
+  id: string;
+  code: string;
+  provider: string;
+  model_name: string;
+}
+
+export interface ToolCatalogOut {
+  id: string;
+  code: string;
+  name: string;
+  kind: string;
+}
+
 export type SseEventName =
   | "connected"
   | "run_submitted"
