@@ -18,7 +18,7 @@ from service.guardrail.instrument import wrap_guardrail_node
 from service.observability.instrument import wrap_graph_node
 from service.runtime.constants import NODE_LLM
 from service.runtime.context import get_graph_exec_ctx
-from service.runtime.flow import GraphState, _publish_speaking
+from service.runtime.flow import GraphState, _publish_reasoning, _publish_speaking
 from service.runtime.llm import (
     ChatCompletionClient,
     ChatMessage,
@@ -156,11 +156,13 @@ class PlannerRuntime:
                 variables["last_output"] = text
                 variables.pop(PENDING_KEY, None)
                 await _publish_speaking(text)
+                variables["last_reasoning"] = ""
                 await _publish_step("planner", "规划", "completed")
                 return {"messages": messages, "variables": variables}
 
             if not specs:
                 parts: list[str] = []
+                reasoning_parts: list[str] = []
                 streamed: list[ChatMessage] = []
                 for item in _llm_messages(state, system):
                     streamed.append(
@@ -169,12 +171,18 @@ class PlannerRuntime:
                             "content": str(item.get("content") or ""),
                         }
                     )
-                async for delta in chat_client.stream(streamed):
-                    parts.append(delta)
-                    await _publish_speaking(delta)
-                turn = ChatTurn(content="".join(parts))
+                async for part in chat_client.stream_parts(streamed):
+                    if part.kind == "reasoning":
+                        reasoning_parts.append(part.text)
+                        await _publish_reasoning(part.text)
+                    else:
+                        parts.append(part.text)
+                        await _publish_speaking(part.text)
+                turn = ChatTurn(content="".join(parts), reasoning="".join(reasoning_parts))
             else:
                 turn = await chat_client.complete_turn(_llm_messages(state, system), specs)
+                if turn.reasoning:
+                    await _publish_reasoning(turn.reasoning)
             if turn.tool_calls:
                 for call in turn.tool_calls:
                     await _publish_tool_calling(
@@ -193,6 +201,7 @@ class PlannerRuntime:
                 await _publish_speaking(content)
             messages.append({"role": "assistant", "content": content})
             variables["last_output"] = content
+            variables["last_reasoning"] = turn.reasoning
             variables.pop(PENDING_KEY, None)
             await _publish_step("planner", "规划", "completed")
             return {"messages": messages, "variables": variables}

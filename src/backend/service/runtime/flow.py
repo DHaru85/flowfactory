@@ -70,9 +70,14 @@ def _make_llm_node(client: ChatCompletionClient, extra_system: str | None) -> No
         if extra_system:
             messages = [{"role": "system", "content": extra_system}, *messages]
         parts: list[str] = []
-        async for delta in client.stream(messages):
-            parts.append(delta)
-            await _publish_speaking(delta)
+        reasoning_parts: list[str] = []
+        async for part in client.stream_parts(messages):
+            if part.kind == "reasoning":
+                reasoning_parts.append(part.text)
+                await _publish_reasoning(part.text)
+            else:
+                parts.append(part.text)
+                await _publish_speaking(part.text)
         content = "".join(parts)
         new_messages: list[dict[str, object]] = [
             *list(state.get("messages") or []),
@@ -85,29 +90,43 @@ def _make_llm_node(client: ChatCompletionClient, extra_system: str | None) -> No
             ]
         variables = dict(state.get("variables") or {})
         variables["last_output"] = content
+        variables["last_reasoning"] = "".join(reasoning_parts)
         return {"messages": new_messages, "variables": variables}
 
     return _node
 
 
 async def _publish_speaking(delta: str) -> None:
-    """流式增量不经护栏；失败不影响图执行。"""
+    """面向用户的流式增量；不经护栏；失败不影响图执行。"""
+    await _publish_stream_delta("speaking", delta)
+
+
+async def _publish_reasoning(delta: str) -> None:
+    """思考增量；不经护栏；失败不影响图执行。"""
+    await _publish_stream_delta("reasoning", delta)
+
+
+async def _publish_stream_delta(kind: str, delta: str) -> None:
     from service.events.context import get_stream_ctx
     from service.events.factory import get_stream_bus
-    from service.events.schemas import speaking_event
+    from service.events.schemas import reasoning_event, speaking_event
 
     ctx = get_stream_ctx()
     if ctx is None or ctx.conversation_id is None or ctx.message_id is None:
         return
     if not delta:
         return
+    event = (
+        reasoning_event(delta=delta, message_id=ctx.message_id)
+        if kind == "reasoning"
+        else speaking_event(delta=delta, message_id=ctx.message_id)
+    )
     try:
-        await get_stream_bus().publish(
-            ctx.conversation_id,
-            speaking_event(delta=delta, message_id=ctx.message_id),
-        )
+        await get_stream_bus().publish(ctx.conversation_id, event)
     except Exception:
-        logger.warning("speaking 投递失败 run_id={}", ctx.run_id)
+        logger.warning("{} 投递失败 run_id={}", kind, ctx.run_id)
+    if kind != "speaking":
+        return
     try:
         from service.cache.client import get_redis_client
         from service.cache.stores import ConversationCacheStore

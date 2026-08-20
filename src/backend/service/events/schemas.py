@@ -20,6 +20,13 @@ def speaking_event(*, delta: str, message_id: UUID) -> StreamEvent:
     )
 
 
+def reasoning_event(*, delta: str, message_id: UUID) -> StreamEvent:
+    return StreamEvent(
+        event="reasoning",
+        data={"delta": delta, "message_id": str(message_id)},
+    )
+
+
 def tool_calling_event(
     *,
     tool_call_id: str,

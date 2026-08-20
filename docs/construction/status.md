@@ -16,8 +16,8 @@
 | 数据层 / service/persistence | 空闲 | 按 binding 主体列出可见资源 id |
 | 数据层 / service/cache | 空闲 | Redis 仅热状态；SSE 帧不走 Redis |
 | 数据层 / settings | 空闲 | 默认 rabbitmq_url；stream 连接超时与投递超时分离 |
-| 服务层 / service/runtime | 空闲 | eager 不堵事件循环；规划 token 出流 |
-| 服务层 / service/events | 空闲 | publish 先本地投递再 AMQP |
+| 服务层 / service/runtime | 空闲 | SSE 思考增量：stream_parts；落库 reasoning 块 |
+| 服务层 / service/events | 空闲 | publish 先本地投递再 AMQP；reasoning_event |
 | 服务层 / service/celery_app | 空闲 | eager 同 loop 执行，默认不 join |
 | 服务层 / service/observability | 空闲 | TraceCollector / LangFuse 预留 / 脱敏 |
 | 服务层 / service/orchestration | 空闲 | Passthrough + Temporal 骨架 |
@@ -33,6 +33,8 @@
 未列出的模块视为 **空闲**。
 
 ## 施工简报
+
+- 2026-08-20 会话 SSE 思考：LLM `stream_parts` 拆出 `reasoning_content` / `reasoning` 与 `<think>`；规划与 workflow `llm` 节点推 `event: reasoning`；完成时 `content_blocks` 含 reasoning + text。pytest `test_stream_bus` 等 16 passed；ruff 通过。需重启 uvicorn 后现网才生效。
 
 - 2026-08-20 SSE 打字机：`stream=True` 已开；token 先入本地 Queue 再 AMQP；Vite 代理对 `/events` 关缓冲。pytest 11 passed；`npm run build` 通过。需重启 uvicorn 与 `npm run dev`。
 - 2026-08-20 规划会话发送：eager 不再堵 uvicorn 事件循环；消息先 commit 再跑图；规划节点 token 出流；前端乐观插入。相关 pytest 21 passed；`npm run build` 通过。需重启 uvicorn 并刷新前端。

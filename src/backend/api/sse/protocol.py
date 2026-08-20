@@ -7,7 +7,7 @@ from typing import Literal
 from uuid import UUID
 
 from service.events.schemas import StreamEvent as SseEvent
-from service.events.schemas import run_lifecycle_event, speaking_event
+from service.events.schemas import reasoning_event, run_lifecycle_event, speaking_event
 
 ProtocolEventName = Literal[
     "connected",
@@ -53,6 +53,7 @@ __all__ = [
     "ProtocolEventName",
     "SseEvent",
     "format_sse",
+    "reasoning_event",
     "run_submitted_event",
     "speaking_event",
 ]

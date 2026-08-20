@@ -83,3 +83,56 @@ async def test_llm_node_publishes_speaking_chunks() -> None:
     finally:
         reset_stream_ctx(token)
         set_stream_bus_override(None)
+
+
+@pytest.mark.asyncio
+async def test_llm_node_publishes_reasoning_chunks() -> None:
+    bus = FakeStreamEventBus()
+    set_stream_bus_override(bus)
+    cid = uuid4()
+    mid = uuid4()
+    token = attach_stream_ctx(
+        StreamPublishContext(conversation_id=cid, run_id=uuid4(), message_id=mid)
+    )
+    fake = FakeChatCompletionClient(chunks=["答案"], reasoning_chunks=["先", "想"])
+    runtime = FlowRuntime.compile(
+        FlowDefinitionDocument(
+            nodes=[{"id": "chat", "kind": "llm"}],
+            edges=[{"source": "chat", "target": "END"}],
+            entry_point="chat",
+        ),
+        flow_id=uuid4(),
+        checkpointer=InMemorySaver(),
+        chat_client=fake,
+    )
+    try:
+        result = await runtime.graph.ainvoke(
+            RunStatePayload(variables={"input": "hi"}).to_graph_state(),
+            {"configurable": {"thread_id": "t-reason"}},
+        )
+        assert result["variables"]["last_output"] == "答案"
+        assert result["variables"]["last_reasoning"] == "先想"
+        reasoning = [item[1] for item in bus.published if item[1].event == "reasoning"]
+        speaking = [item[1] for item in bus.published if item[1].event == "speaking"]
+        assert [item.data.get("delta") for item in reasoning] == ["先", "想"]
+        assert [item.data.get("delta") for item in speaking] == ["答案"]
+        assert all(item.data.get("message_id") == str(mid) for item in reasoning)
+    finally:
+        reset_stream_ctx(token)
+        set_stream_bus_override(None)
+
+
+def test_think_tag_splitter_incremental() -> None:
+    from service.runtime.llm import ThinkTagSplitter
+
+    splitter = ThinkTagSplitter()
+    kinds: list[tuple[str, str]] = []
+    for piece in ["<", "think>", "先想", "</th", "ink>", "答案"]:
+        for part in splitter.feed(piece):
+            kinds.append((part.kind, part.text))
+    for part in splitter.flush():
+        kinds.append((part.kind, part.text))
+    reasoning = "".join(text for kind, text in kinds if kind == "reasoning")
+    speaking = "".join(text for kind, text in kinds if kind == "speaking")
+    assert reasoning == "先想"
+    assert speaking == "答案"

@@ -123,8 +123,15 @@ def _last_assistant_text(result: dict[str, object]) -> str:
     return ""
 
 
+def _last_assistant_reasoning(result: dict[str, object]) -> str:
+    variables = result.get("variables")
+    if isinstance(variables, dict) and variables.get("last_reasoning"):
+        return str(variables["last_reasoning"])
+    return ""
+
+
 async def _finalize_assistant_message(
-    message_id: UUID | None, *, status: str, text: str
+    message_id: UUID | None, *, status: str, text: str, reasoning: str = ""
 ) -> None:
     if message_id is None:
         return
@@ -134,8 +141,13 @@ async def _finalize_assistant_message(
         if row is None:
             return
         row.status = status
+        blocks: list[dict[str, object]] = []
+        if reasoning:
+            blocks.append({"type": "reasoning", "text": reasoning})
         if text:
-            row.content_blocks = [{"type": "text", "text": text}]
+            blocks.append({"type": "text", "text": text})
+        if blocks:
+            row.content_blocks = blocks
 
 
 async def _publish_lifecycle(
@@ -377,6 +389,7 @@ async def execute_envelope(
                 stream_ctx.message_id,
                 status="completed",
                 text=_last_assistant_text(result_dict),
+                reasoning=_last_assistant_reasoning(result_dict),
             )
             await _publish_lifecycle("run_completed", stream_ctx)
         return {
