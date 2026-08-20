@@ -1,13 +1,21 @@
-"""鉴权路由：登录 / 刷新 / 登出 / 当前用户。"""
+"""鉴权路由：登录 / 刷新 / 登出 / 当前用户 / 应用可见性。"""
 
 from __future__ import annotations
+
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.apps.auth.schemas import LoginBody, LogoutBody, RefreshBody
+from api.access import require_platform_admin
+from api.apps.agent_config.access import load_bindings, save_bindings
+from api.apps.agent_config.schemas import BindingItem, BindingPutBody
+from api.apps.auth.schemas import AppVisibilityOut, LoginBody, LogoutBody, RefreshBody
 from api.deps import CurrentUser, db_session, get_current_user
-from api.errors import auth_error_to_http
+from api.errors import auth_error_to_http, http_error
+from api.registry.application import ApplicationRegistry
+from data_schema.permission.models import Asset
+from service.auth.access import AccessControl
 from service.auth.errors import AuthError
 from service.auth.schemas import (
     LoginCredentials,
@@ -16,6 +24,7 @@ from service.auth.schemas import (
     TokenPairResponse,
 )
 from service.auth.service import AuthService
+from service.persistence.factory import get_repositories
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -27,6 +36,32 @@ def _client_ip(request: Request) -> str | None:
     if request.client is None:
         return None
     return request.client.host
+
+
+async def _require_app_asset_id(
+    session: AsyncSession,
+    apps: ApplicationRegistry,
+    app_key: str,
+) -> UUID:
+    if app_key not in apps.list_keys():
+        raise http_error(404, "app_not_found", "应用不存在")
+    repos = get_repositories(session)
+    asset = await repos.permission.get_asset_by_key("application", app_key)
+    if asset is None:
+        application = apps.get(app_key)
+        await repos.permission.asset.add(
+            Asset(
+                asset_type="application",
+                asset_key=app_key,
+                name=application.name,
+                metadata_={},
+            )
+        )
+        await session.flush()
+        asset = await repos.permission.get_asset_by_key("application", app_key)
+        if asset is None:
+            raise http_error(404, "app_not_found", "应用不存在")
+    return asset.id
 
 
 @router.post("/login", response_model=TokenPairResponse)
@@ -96,3 +131,51 @@ async def me(current: CurrentUser = Depends(get_current_user)) -> dict[str, obje
         "organization_id": str(current.organization_id),
         "roles": current.roles,
     }
+
+
+@router.get("/apps", response_model=list[AppVisibilityOut])
+async def list_visible_apps(
+    request: Request,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(db_session),
+) -> list[AppVisibilityOut]:
+    apps: ApplicationRegistry = request.app.state.apps
+    access = AccessControl(session)
+    result: list[AppVisibilityOut] = []
+    for item in apps.all():
+        can_use = item.app_key == "auth" or await access.can_use_app(current.id, item.app_key)
+        if not can_use:
+            continue
+        can_control = await access.can_control_app(current.id, item.app_key)
+        result.append(
+            AppVisibilityOut(
+                app_key=item.app_key,
+                name=item.name,
+                can_use=True,
+                can_control=can_control,
+            )
+        )
+    return result
+
+
+@router.get("/apps/{app_key}/bindings", response_model=list[BindingItem])
+async def get_app_bindings(
+    app_key: str,
+    request: Request,
+    _admin: CurrentUser = Depends(require_platform_admin),
+    session: AsyncSession = Depends(db_session),
+) -> list[BindingItem]:
+    asset_id = await _require_app_asset_id(session, request.app.state.apps, app_key)
+    return await load_bindings(session, "application", asset_id)
+
+
+@router.put("/apps/{app_key}/bindings", response_model=list[BindingItem])
+async def put_app_bindings(
+    app_key: str,
+    body: BindingPutBody,
+    request: Request,
+    _admin: CurrentUser = Depends(require_platform_admin),
+    session: AsyncSession = Depends(db_session),
+) -> list[BindingItem]:
+    asset_id = await _require_app_asset_id(session, request.app.state.apps, app_key)
+    return await save_bindings(session, "application", asset_id, body.bindings)

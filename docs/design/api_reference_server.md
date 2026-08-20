@@ -3,8 +3,9 @@
 本文描述 **应用层接口**（FastAPI），含 `auth` / `conversation` / `studio` / `models` / `agent_config`。服务层能力见 [service_layer.md](./service_layer.md)；表结构见 [data_schema_server.md](./data_schema_server.md)。未开工轮次见 [plan/unreached](../plan/unreached/)。
 
 - 基址前缀：`/api/v1`（健康检查除外）。
-- 鉴权：除登录、刷新、`GET /health` 外，请求头 `Authorization: Bearer <access_token>`。
-- 错误体：`{"code": string, "message": string}`。
+- 鉴权：除登录、刷新、`GET /health` 外，请求头 `Authorization: Bearer <access_token>`。业务应用另需 **应用绑定或角色 grant**（见下）。
+- 错误体：`{"code": string, "message": string}`。无权进入应用：`403 app_forbidden`。
+- RBAC：平台管理员 = `sys_user.is_superuser`（与 RBAC 管理员同一角色定义），天生可查看/修改/删除全部应用与资源配置。非超管分两档：**可见可用**（`read`/`use`，`write`/`admin` 亦算可见）与 **修改与完全控制**（`write`/`admin`）。应用可见性由 `agent_resource_binding`（`resource_type=application`）与 `PermissionService` 角色 grant **并集**决定；组织不沿父级继承。`GET /health` 的 `apps` 不过滤。
 - 本轮无限流 HTTP。SSE 中继为 RabbitMQ topic `ff.stream`（与 Celery 任务队列隔离）；Redis 只做断线缓冲与在场登记。
 - 流式 `speaking` **不经内容护栏**；护栏作用于节点完成后的持久化 state。
 
@@ -40,9 +41,19 @@
 
 缺少 Token：`401 token_missing`。
 
+### `GET /api/v1/auth/apps`
+
+需 access。返回当前用户可见应用：`app_key` / `name` / `can_use` / `can_control`。`auth` 对已登录用户始终出现。超管 `can_control` 为全部已注册应用。
+
+### `GET /api/v1/auth/apps/{app_key}/bindings`
+
+### `PUT /api/v1/auth/apps/{app_key}/bindings`
+
+仅超管。覆盖写入该应用对组织/部门/角色/个人的绑定。未知应用 `404 app_not_found`。主体不存在 `400 subject_not_found`。
+
 ## 3. 应用 `conversation`（注册 `app_key=conversation`）
 
-会话归属当前用户；越权 `403 conversation_forbidden`，不存在或**跨场景前缀** `404 conversation_not_found`。规划与工作流共用 `conv_*` 表与 SSE 协议，HTTP 分路径。列表项不含 `metadata`；详情含 `metadata`。本轮不调用 `PermissionService`。
+需对 `conversation` **可见可用** 才能列表/详情/SSE；**完全控制** 才能建会话、发消息。会话归属当前用户；越权 `403 conversation_forbidden`，不存在或**跨场景前缀** `404 conversation_not_found`。规划与工作流共用 `conv_*` 表与 SSE 协议，HTTP 分路径。列表项不含 `metadata`；详情含 `metadata`。规划所用 Profile 须对当前用户资源可见，否则 `404 profile_not_found`。
 
 会话行 `app_key`：规划为 `planner`；`/workflow*` 新建为 `workflow`；兼容路径新建为 `conversation`。`/workflow*` 与兼容路径列表过滤 `app_key in (workflow, conversation)`。
 
@@ -127,7 +138,7 @@ data: <json>
 
 ## 5. 应用 `studio`（`app_key=studio`）
 
-工作流编排配置态。需 access。本轮 **不调用** `PermissionService`（基础设施阶段，不审角色/资产）。`schema_version=1` 图经 `FlowRuntime.compile` 双读后可被 `WorkflowRuntimeService.start` / 会话入队执行。v0 内联 definition 仍可用。
+工作流编排配置态。需对 `studio` 可见可用（列表/详情/目录）或完全控制（草稿/发布/新草稿）。无权限 `403 app_forbidden`。`schema_version=1` 图经 `FlowRuntime.compile` 双读后可被 `WorkflowRuntimeService.start` / 会话入队执行。v0 内联 definition 仍可用。Profile/Tool 目录再按资源绑定过滤；LLM 目录无行级绑定。
 
 非法图：`400 definition_invalid`。非草稿修改：`400 flow_not_draft`。不存在：`404 flow_not_found`。`code+version` 冲突：`409 flow_code_version_conflict`。
 
@@ -173,11 +184,11 @@ data: <json>
 
 ## 6. 应用 `models`（`app_key=models`）
 
-公共 LLM 目录。需 access。本轮 **不调用** `PermissionService`。密钥不出现在响应 JSON 的 `config` 中；以 `has_api_key` 表示是否已配置。`provider`：`openai` / `azure` / `local`。非法 provider：`400 provider_invalid`。code 冲突：`409 llm_code_conflict`。不存在：`404 llm_not_found`。
+公共 LLM 目录。需对 `models` 可见可用（列表/详情）或完全控制（创建/PATCH/停用）。密钥不出现在响应 JSON 的 `config` 中；以 `has_api_key` 表示是否已配置。`provider`：`openai` / `azure` / `local`。非法 provider：`400 provider_invalid`。code 冲突：`409 llm_code_conflict`。不存在：`404 llm_not_found`。无行级绑定。
 
 Studio `GET /api/v1/studio/llms` 仍只读活跃项、不下发 `config`。运行时 `resolve_llm_client` 按 `agent_llm` 装配客户端，缺省回退环境变量 `llm_*`。
 
-规划循环、会话路径拆分、RBAC 审核见 `docs/plan/unreached/`。
+规划循环、会话路径拆分已落地。RBAC 见本文开头与 `agent_config` 绑定规则。
 
 ### `GET /api/v1/models/llms`
 
@@ -199,7 +210,9 @@ Studio `GET /api/v1/studio/llms` 仍只读活跃项、不下发 `config`。运�
 
 ## 7. 应用 `agent_config`（`app_key=agent_config`）
 
-Profile / Skill / Tool / MCP / Beat（工作流或规划）。需 access。本轮 **不调用** `PermissionService`，列表对任意 JWT 可见。创建配置资源时登记 `sys_asset`。绑定 `PUT .../bindings` 覆盖写入 `agent_resource_binding`，主体须存在否则 `400 subject_not_found`。
+Profile / Skill / Tool / MCP / Beat（工作流或规划）。需对 `agent_config` 可见可用或完全控制。创建配置资源时登记 `sys_asset`。绑定 `PUT .../bindings` 仅完全控制（或超管）覆盖写入 `agent_resource_binding`，主体须存在否则 `400 subject_not_found`。
+
+普通人列表/详情仅命中自身组织/部门/角色/用户绑定且 actions 含 `read`/`use`/`write`/`admin` 的资源；未绑定不可见；越权详情 `404`（不 `403`）。完全控制者与超管可见该应用全部配置（含未绑定）。Beat 无行级绑定：可见可用即可列表/详情，完全控制才能创建/改/启停。
 
 code 冲突 `409`。缺引用 `400`（`llm_not_found` / `skill_not_found` / `tool_not_found` / `mcp_server_not_found` / `flow_not_found` / `profile_not_found` / `mcp_server_required`）。非法 cron：`400 cron_invalid`。
 
@@ -229,6 +242,6 @@ code 冲突 `409`。缺引用 `400`（`llm_not_found` / `skill_not_found` / `too
 
 到期：工作流走 Flow compile；规划 `kind=planner` 入队，不 compile Flow。系统用户未配置则跳过。
 
-### RBAC 预留（本轮不生效）
+### 应用与资源绑定
 
-以后：创建/改绑定要求超管或对 `asset_type=application` `asset_key=agent_config` 的 `admin`；列表按 binding 与角色 grant 过滤。见 unreached RBAC 方案。
+应用绑定：`PUT /api/v1/auth/apps/{app_key}/bindings`。配置绑定：`GET/PUT /api/v1/agent-config/{profiles|skills|tools|mcp-servers}/{id}/bindings`。

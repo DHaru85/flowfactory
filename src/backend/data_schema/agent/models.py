@@ -149,7 +149,7 @@ class AgentBeatTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
 
 class AgentResourceBinding(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    """配置资源与 RBAC 主体的绑定（本轮只落数据，不审核）。"""
+    """配置资源或应用资产与 RBAC 主体的绑定。"""
 
     __tablename__ = "agent_resource_binding"
     __table_args__ = (

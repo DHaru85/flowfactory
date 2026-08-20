@@ -14,3 +14,10 @@ class RefreshBody(BaseModel):
 
 class LogoutBody(BaseModel):
     refresh_token: str | None = None
+
+
+class AppVisibilityOut(BaseModel):
+    app_key: str
+    name: str
+    can_use: bool
+    can_control: bool

@@ -1,6 +1,9 @@
 """仓储基类。"""
 
+from __future__ import annotations
+
 import uuid
+from collections.abc import Sequence
 from typing import Generic, TypeVar
 
 from sqlalchemy import select
@@ -23,6 +26,19 @@ class Repository(Generic[ModelT]):
 
     async def list(self, *, offset: int = 0, limit: int = 50) -> list[ModelT]:
         stmt = select(self.model).offset(offset).limit(limit)
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
+    async def list_by_ids(
+        self,
+        ids: Sequence[uuid.UUID],
+        *,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[ModelT]:
+        if not ids:
+            return []
+        stmt = select(self.model).where(self.model.id.in_(list(ids))).offset(offset).limit(limit)
         result = await self._session.scalars(stmt)
         return list(result.all())
 

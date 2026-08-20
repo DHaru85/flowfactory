@@ -406,7 +406,8 @@ LDAP：`ldap_enabled=false` 时登录不访问目录。测试：`set_ldap_adapte
 - 否则且 LDAP 开启：`bind_user` → `map_identity` → `provision_ldap_user` 写 `sys_user` + `sys_external_identity`（无本地密码）。
 - Access：短 JWT（HS256），`jti` 可黑名单；`revoke_before` 作废该时刻之前签发的 access。
 - Refresh：opaque，库内只存 hash；同 `family_id` 轮换；已吊销的 refresh 再使用会吊销整族（重用检测）。
-- 授权：角色 grants 并集；`is_superuser` 直通；`admin` action 覆盖同资产其它动作。Grants 可走 Redis，TTL 300s。
+- 授权：角色 grants 并集；`is_superuser` 直通（平台管理员 ≡ RBAC 管理员）；`admin` action 覆盖同资产其它动作。Grants 可走 Redis，TTL 300s。
+- 应用可见性：`AccessControl` 将 `agent_resource_binding`（`resource_type=application`）与角色 grant 求并集。两档：可见可用 vs 修改与完全控制。配置资源再按 binding 过滤；未绑定对普通人不可见。
 
 适配器**不依赖 ORM**。
 
@@ -434,7 +435,7 @@ flowchart TD
 | 真实 LDAP | 配齐 `ldap_*`，`ldap_enabled=true`；完善 `Ldap3Adapter`，不改登录顺序。 |
 | 新目录协议 | 实现 `LdapAdapter`，工厂返回新类型。 |
 | 新资产类型 | 数据在 Permission 域；`PermissionService.check` 已按 `asset_type`+`asset_key`+`action` 通用匹配。 |
-| 应用层鉴权依赖 | 校验 access → `verify_access_token` → `PermissionService.check`。 |
+| 应用层鉴权依赖 | 校验 access → `verify_access_token` → `AccessControl`（应用绑定 ∪ `PermissionService.check`）。 |
 
 ---
 

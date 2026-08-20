@@ -5,7 +5,7 @@
 | 映射层 / data_schema（Permission） | 空闲 | ORM + 仓储已落地；User.roles 补 foreign_keys |
 | 映射层 / data_schema（Conversation） | 空闲 | ORM + 仓储已落地 |
 | 映射层 / data_schema（Workflow） | 空闲 | `wf_child_run_pending` ORM + Alembic b7e2c91a4d03 |
-| 映射层 / data_schema（Agent） | 空闲 | `agent_resource_binding`；Beat `flow_id`/`profile_id` 恰一 |
+| 映射层 / data_schema（Agent） | 空闲 | binding 含 application；主体索引 b1d8f4a06c31 |
 | 映射层 / data_schema（Knowledge） | 空闲 | embedding 列 1024 维（bge-m3）；Alembic c4a91f2e7b10 |
 | 映射层 / data_schema（Audit） | 空闲 | ORM + 仓储已落地 |
 | 映射层 / data_schema（Graph） | 空闲 | ORM + 仓储已落地 |
@@ -13,7 +13,7 @@
 | 映射层 / data_schema（Observability） | 空闲 | ORM + Collector flush 仓储查询 |
 | 映射层 / data_schema（Notification） | 空闲 | ORM + 仓储已落地 |
 | 数据层 / service/database | 空闲 | 异步引擎改为线程局部，适配 Celery prefork/eager |
-| 数据层 / service/persistence | 空闲 | `list_by_user` 可按 `app_key` 过滤 |
+| 数据层 / service/persistence | 空闲 | 按 binding 主体列出可见资源 id |
 | 数据层 / service/cache | 空闲 | Redis 仅热状态；SSE 帧不走 Redis |
 | 数据层 / settings | 空闲 | 含 stream_exchange / prefetch |
 | 服务层 / service/runtime | 空闲 | compile 双读 v0/v1；`PlannerRuntime`；Beat 规划入队 |
@@ -23,15 +23,17 @@
 | 服务层 / service/orchestration | 空闲 | Passthrough + Temporal 骨架 |
 | 服务层 / service/knowledge | 空闲 | 切片 / 向量化 / 检索 / 入库流水线 |
 | 服务层 / service/storage | 空闲 | ObjectStore + MinIO public GET |
-| 服务层 / service/auth | 空闲 | AuthService / PermissionService / LDAP 预留 |
+| 服务层 / service/auth | 空闲 | AccessControl 应用两档 + 资源可见性 |
 | 服务层 / service/tools | 空闲 | ToolExecutor；SkillRuntime |
-| docs/design（服务说明文档） | 空闲 | runtime v1 可执行；仍不审 RBAC |
-| 应用层 / api | 空闲 | `models` / `agent_config`；planner 会话与 Beat；Studio Flow v1；SSE |
+| docs/design（服务说明文档） | 空闲 | RBAC 应用/资源绑定已接通 |
+| 应用层 / api | 空闲 | 应用绑定、两档拦截、配置行级过滤 |
 | 服务层 / service/guardrail | 空闲 | GuardrailEvaluator / PolicyDetector 预留 |
 
 未列出的模块视为 **空闲**。
 
 ## 施工简报
+
+- 2026-08-20 RBAC：双层绑定（应用 ∪ 配置资源）。平台管理员 ≡ `is_superuser`，全应用/全资源查看修改删除。models/studio/agent_config（含 Beat）两档：可见可用 vs 完全控制。普通人未绑定资源 404。Alembic b1d8f4a06c31。ruff 通过；相关 pytest 26 passed。前端仍在 `docs/plan/unreached/`。
 
 - 2026-08-20 规划 Beat：`agent_beat_task.flow_id` 可空，`profile_id` FK 恰一（Alembic a9c3e1d04b72）。到期 `profile_id` 入队 `kind=planner`，不 compile Flow。HTTP `/beat-tasks` 互斥字段；仅 `flow_id` 仍可用。ruff 通过；相关 pytest 14 passed。RBAC 审核 / 前端仍在 `docs/plan/unreached/`。
 - 2026-08-20 第 3 轮自研规划循环：`SkillRuntime` + `PlannerRuntime`（planner⇄tools，`planner_max_steps`）；Celery 仍 `run_langgraph_flow`，envelope `kind=planner`。`POST /conversations/planner/messages` 返回 `run_id`。完成回写 assistant 消息。不引入 deepagents。ruff 通过；相关 pytest 6 passed（含集成写库）。规划 Beat / RBAC 审核 / 前端仍在 `docs/plan/unreached/`。

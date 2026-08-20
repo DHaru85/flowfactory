@@ -11,6 +11,7 @@ from loguru import logger
 from api.registry.application import Application, ApplicationRegistry
 from api.registry.schemas import ApplicationContext, ServiceInvokeContext
 from api.registry.service import ServiceRegistry
+from service.auth.bootstrap import ensure_application_assets
 
 
 def _iter_application_classes() -> list[type[Application]]:
@@ -54,6 +55,9 @@ async def run_startup_hooks(apps: ApplicationRegistry, services: ServiceRegistry
                 request_id=request_id,
             )
         )
+    await ensure_application_assets(
+        [(item.app_key, item.name) for item in apps.all()]
+    )
     for application in apps.all():
         await application.on_startup(ApplicationContext(app_key=application.app_key, settings={}))
 

@@ -1,6 +1,6 @@
-"""Agent 配置 REST：Profile / Skill / Tool / MCP / 工作流 Beat。
+"""Agent 配置 REST：Profile / Skill / Tool / MCP / Beat。
 
-本轮不调用 PermissionService；绑定仅落库。规划侧 Beat 见 unreached。
+可见可用与完全控制两档；配置行按绑定过滤。
 """
 
 from __future__ import annotations
@@ -13,7 +13,17 @@ from loguru import logger
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.apps.agent_config.access import load_bindings, save_bindings, upsert_config_asset
+from api.access import require_app
+from api.apps.agent_config.access import (
+    assert_config_visible,
+    load_bindings,
+    load_visible_mcp_rows,
+    load_visible_profile_rows,
+    load_visible_skill_rows,
+    load_visible_tool_rows,
+    save_bindings,
+    upsert_config_asset,
+)
 from api.apps.agent_config.schemas import (
     BeatCreateBody,
     BeatOut,
@@ -33,7 +43,7 @@ from api.apps.agent_config.schemas import (
     ToolOut,
     ToolPatchBody,
 )
-from api.deps import CurrentUser, db_session, get_current_user
+from api.deps import CurrentUser, db_session
 from api.errors import http_error
 from data_schema.agent.models import (
     AgentBeatTask,
@@ -45,6 +55,9 @@ from data_schema.agent.models import (
 from service.persistence.factory import get_repositories
 
 router = APIRouter(prefix="/api/v1/agent-config", tags=["agent_config"])
+
+_use_agent_config = require_app("agent_config")
+_ctrl_agent_config = require_app("agent_config", control=True)
 
 
 def _uuids_from_json(raw: list[str]) -> list[UUID]:
@@ -182,20 +195,19 @@ async def _put_bindings(
 
 @router.get("/profiles", response_model=list[ProfileOut])
 async def list_profiles(
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_agent_config),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
 ) -> list[ProfileOut]:
-    repos = get_repositories(session)
-    rows = await repos.agent.profile.list(offset=offset, limit=min(limit, 100))
+    rows = await load_visible_profile_rows(session, current.id, offset=offset, limit=limit)
     return [_profile_out(row) for row in rows]
 
 
 @router.post("/profiles", response_model=ProfileOut)
 async def create_profile(
     body: ProfileCreateBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> ProfileOut:
     await _require_llm(session, body.default_llm_id)
@@ -222,9 +234,17 @@ async def create_profile(
 @router.get("/profiles/{profile_id}", response_model=ProfileOut)
 async def get_profile(
     profile_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> ProfileOut:
+    await assert_config_visible(
+        session,
+        current.id,
+        "profile",
+        profile_id,
+        missing_code="profile_not_found",
+        missing_message="Profile 不存在",
+    )
     repos = get_repositories(session)
     row = await repos.agent.profile.get(profile_id)
     if row is None:
@@ -236,7 +256,7 @@ async def get_profile(
 async def patch_profile(
     profile_id: UUID,
     body: ProfilePatchBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> ProfileOut:
     repos = get_repositories(session)
@@ -260,7 +280,7 @@ async def patch_profile(
 @router.get("/profiles/{profile_id}/bindings", response_model=list[BindingItem])
 async def get_profile_bindings(
     profile_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> list[BindingItem]:
     repos = get_repositories(session)
@@ -273,7 +293,7 @@ async def get_profile_bindings(
 async def put_profile_bindings(
     profile_id: UUID,
     body: BindingPutBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> list[BindingItem]:
     repos = get_repositories(session)
@@ -287,20 +307,19 @@ async def put_profile_bindings(
 
 @router.get("/skills", response_model=list[SkillOut])
 async def list_skills(
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_agent_config),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
 ) -> list[SkillOut]:
-    repos = get_repositories(session)
-    rows = await repos.agent.skill.list(offset=offset, limit=min(limit, 100))
+    rows = await load_visible_skill_rows(session, current.id, offset=offset, limit=limit)
     return [_skill_out(row) for row in rows]
 
 
 @router.post("/skills", response_model=SkillOut)
 async def create_skill(
     body: SkillCreateBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> SkillOut:
     await _require_tools(session, body.tool_ids)
@@ -325,9 +344,17 @@ async def create_skill(
 @router.get("/skills/{skill_id}", response_model=SkillOut)
 async def get_skill(
     skill_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> SkillOut:
+    await assert_config_visible(
+        session,
+        current.id,
+        "skill",
+        skill_id,
+        missing_code="skill_not_found",
+        missing_message="技能不存在",
+    )
     repos = get_repositories(session)
     row = await repos.agent.skill.get(skill_id)
     if row is None:
@@ -339,7 +366,7 @@ async def get_skill(
 async def patch_skill(
     skill_id: UUID,
     body: SkillPatchBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> SkillOut:
     repos = get_repositories(session)
@@ -362,7 +389,7 @@ async def patch_skill(
 @router.get("/skills/{skill_id}/bindings", response_model=list[BindingItem])
 async def get_skill_bindings(
     skill_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> list[BindingItem]:
     repos = get_repositories(session)
@@ -375,7 +402,7 @@ async def get_skill_bindings(
 async def put_skill_bindings(
     skill_id: UUID,
     body: BindingPutBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> list[BindingItem]:
     repos = get_repositories(session)
@@ -389,20 +416,19 @@ async def put_skill_bindings(
 
 @router.get("/tools", response_model=list[ToolOut])
 async def list_tools(
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_agent_config),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
 ) -> list[ToolOut]:
-    repos = get_repositories(session)
-    rows = await repos.agent.tool.list(offset=offset, limit=min(limit, 100))
+    rows = await load_visible_tool_rows(session, current.id, offset=offset, limit=limit)
     return [_tool_out(row) for row in rows]
 
 
 @router.post("/tools", response_model=ToolOut)
 async def create_tool(
     body: ToolCreateBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> ToolOut:
     await _require_mcp(session, body.mcp_server_id, required=body.kind == "mcp")
@@ -428,9 +454,17 @@ async def create_tool(
 @router.get("/tools/{tool_id}", response_model=ToolOut)
 async def get_tool(
     tool_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> ToolOut:
+    await assert_config_visible(
+        session,
+        current.id,
+        "tool",
+        tool_id,
+        missing_code="tool_not_found",
+        missing_message="工具不存在",
+    )
     repos = get_repositories(session)
     row = await repos.agent.tool.get(tool_id)
     if row is None:
@@ -442,7 +476,7 @@ async def get_tool(
 async def patch_tool(
     tool_id: UUID,
     body: ToolPatchBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> ToolOut:
     repos = get_repositories(session)
@@ -469,7 +503,7 @@ async def patch_tool(
 @router.get("/tools/{tool_id}/bindings", response_model=list[BindingItem])
 async def get_tool_bindings(
     tool_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> list[BindingItem]:
     repos = get_repositories(session)
@@ -482,7 +516,7 @@ async def get_tool_bindings(
 async def put_tool_bindings(
     tool_id: UUID,
     body: BindingPutBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> list[BindingItem]:
     repos = get_repositories(session)
@@ -496,20 +530,19 @@ async def put_tool_bindings(
 
 @router.get("/mcp-servers", response_model=list[McpOut])
 async def list_mcp(
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_agent_config),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
 ) -> list[McpOut]:
-    repos = get_repositories(session)
-    rows = await repos.agent.mcp_server.list(offset=offset, limit=min(limit, 100))
+    rows = await load_visible_mcp_rows(session, current.id, offset=offset, limit=limit)
     return [_mcp_out(row) for row in rows]
 
 
 @router.post("/mcp-servers", response_model=McpOut)
 async def create_mcp(
     body: McpCreateBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> McpOut:
     repos = get_repositories(session)
@@ -533,9 +566,17 @@ async def create_mcp(
 @router.get("/mcp-servers/{server_id}", response_model=McpOut)
 async def get_mcp(
     server_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> McpOut:
+    await assert_config_visible(
+        session,
+        current.id,
+        "mcp_server",
+        server_id,
+        missing_code="mcp_server_not_found",
+        missing_message="MCP Server 不存在",
+    )
     repos = get_repositories(session)
     row = await repos.agent.mcp_server.get(server_id)
     if row is None:
@@ -547,7 +588,7 @@ async def get_mcp(
 async def patch_mcp(
     server_id: UUID,
     body: McpPatchBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> McpOut:
     repos = get_repositories(session)
@@ -569,7 +610,7 @@ async def patch_mcp(
 @router.get("/mcp-servers/{server_id}/bindings", response_model=list[BindingItem])
 async def get_mcp_bindings(
     server_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> list[BindingItem]:
     repos = get_repositories(session)
@@ -582,7 +623,7 @@ async def get_mcp_bindings(
 async def put_mcp_bindings(
     server_id: UUID,
     body: BindingPutBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> list[BindingItem]:
     repos = get_repositories(session)
@@ -596,7 +637,7 @@ async def put_mcp_bindings(
 
 @router.get("/beat-tasks", response_model=list[BeatOut])
 async def list_beats(
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_agent_config),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
@@ -609,7 +650,7 @@ async def list_beats(
 @router.post("/beat-tasks", response_model=BeatOut)
 async def create_beat(
     body: BeatCreateBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> BeatOut:
     _valid_cron(body.cron)
@@ -648,7 +689,7 @@ async def create_beat(
 @router.get("/beat-tasks/{task_id}", response_model=BeatOut)
 async def get_beat(
     task_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> BeatOut:
     repos = get_repositories(session)
@@ -662,7 +703,7 @@ async def get_beat(
 async def patch_beat(
     task_id: UUID,
     body: BeatPatchBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> BeatOut:
     repos = get_repositories(session)
@@ -680,7 +721,7 @@ async def patch_beat(
 @router.post("/beat-tasks/{task_id}/enable", response_model=BeatOut)
 async def enable_beat(
     task_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> BeatOut:
     repos = get_repositories(session)
@@ -694,7 +735,7 @@ async def enable_beat(
 @router.post("/beat-tasks/{task_id}/disable", response_model=BeatOut)
 async def disable_beat(
     task_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_agent_config),
     session: AsyncSession = Depends(db_session),
 ) -> BeatOut:
     repos = get_repositories(session)

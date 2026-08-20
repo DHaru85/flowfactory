@@ -1,6 +1,6 @@
 """工作流编排 Studio REST。
 
-本轮：校验并持久化 schema_version=1；仅 JWT，不审 RBAC。执行走 runtime compile 双读。
+本轮：校验并持久化 schema_version=1；应用两档权限。执行走 runtime compile 双读。
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.access import require_app
+from api.apps.agent_config.access import load_visible_profile_rows, load_visible_tool_rows
 from api.apps.studio.schemas import (
     FlowCreateBody,
     FlowOut,
@@ -23,7 +25,7 @@ from api.apps.studio.schemas import (
     PublishedFlowCodeOut,
     ToolCatalogOut,
 )
-from api.deps import CurrentUser, db_session, get_current_user
+from api.deps import CurrentUser, db_session
 from api.errors import http_error
 from data_schema.agent.models import AgentFlow
 from service.persistence.factory import get_repositories
@@ -35,6 +37,9 @@ from service.runtime.definition_v1 import (
 )
 
 router = APIRouter(prefix="/api/v1/studio", tags=["studio"])
+
+_use_studio = require_app("studio")
+_ctrl_studio = require_app("studio", control=True)
 
 
 def _parse_definition(raw: dict[str, object]) -> FlowDefinitionV1:
@@ -123,19 +128,18 @@ async def _assert_subgraph_refs_and_no_cycle(
 
 @router.get("/profiles", response_model=list[ProfileCatalogOut])
 async def list_profiles(
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_studio),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
 ) -> list[ProfileCatalogOut]:
-    repos = get_repositories(session)
-    rows = await repos.agent.profile.list(offset=offset, limit=limit)
+    rows = await load_visible_profile_rows(session, current.id, offset=offset, limit=limit)
     return [ProfileCatalogOut(id=row.id, code=row.code, name=row.name) for row in rows]
 
 
 @router.get("/llms", response_model=list[LlmCatalogOut])
 async def list_llms(
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_studio),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
@@ -156,13 +160,12 @@ async def list_llms(
 
 @router.get("/tools", response_model=list[ToolCatalogOut])
 async def list_tools(
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_studio),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
 ) -> list[ToolCatalogOut]:
-    repos = get_repositories(session)
-    rows = await repos.agent.tool.list(offset=offset, limit=limit)
+    rows = await load_visible_tool_rows(session, current.id, offset=offset, limit=limit)
     return [
         ToolCatalogOut(id=row.id, code=row.code, name=row.name, kind=row.kind) for row in rows
     ]
@@ -170,7 +173,7 @@ async def list_tools(
 
 @router.get("/flows/published-codes", response_model=list[PublishedFlowCodeOut])
 async def list_published_codes(
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_studio),
     session: AsyncSession = Depends(db_session),
 ) -> list[PublishedFlowCodeOut]:
     repos = get_repositories(session)
@@ -180,7 +183,7 @@ async def list_published_codes(
 
 @router.get("/flows", response_model=list[FlowOut])
 async def list_flows(
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_studio),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
@@ -195,7 +198,7 @@ async def list_flows(
 @router.post("/flows", response_model=FlowOut)
 async def create_flow(
     body: FlowCreateBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_studio),
     session: AsyncSession = Depends(db_session),
 ) -> FlowOut:
     await _require_profile(session, body.profile_id)
@@ -226,7 +229,7 @@ async def create_flow(
 @router.get("/flows/{flow_id}", response_model=FlowOut)
 async def get_flow(
     flow_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_studio),
     session: AsyncSession = Depends(db_session),
 ) -> FlowOut:
     return _to_out(await _get_flow(session, flow_id))
@@ -236,7 +239,7 @@ async def get_flow(
 async def patch_flow(
     flow_id: UUID,
     body: FlowPatchBody,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_studio),
     session: AsyncSession = Depends(db_session),
 ) -> FlowOut:
     flow = await _get_flow(session, flow_id)
@@ -255,7 +258,7 @@ async def patch_flow(
 @router.post("/flows/{flow_id}/publish", response_model=FlowOut)
 async def publish_flow(
     flow_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_studio),
     session: AsyncSession = Depends(db_session),
 ) -> FlowOut:
     flow = await _get_flow(session, flow_id)
@@ -276,7 +279,7 @@ async def publish_flow(
 @router.post("/flows/{flow_id}/new-draft", response_model=FlowOut)
 async def new_draft(
     flow_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_studio),
     session: AsyncSession = Depends(db_session),
 ) -> FlowOut:
     source = await _get_flow(session, flow_id)

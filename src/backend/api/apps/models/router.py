@@ -9,13 +9,17 @@ from loguru import logger
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.access import require_app
 from api.apps.models.schemas import LlmCreateBody, LlmOut, LlmPatchBody, redact_llm_config
-from api.deps import CurrentUser, db_session, get_current_user
+from api.deps import CurrentUser, db_session
 from api.errors import http_error
 from data_schema.agent.models import AgentLlm
 from service.persistence.factory import get_repositories
 
 router = APIRouter(prefix="/api/v1/models", tags=["models"])
+
+_use_models = require_app("models")
+_ctrl_models = require_app("models", control=True)
 
 _PROVIDERS = frozenset({"openai", "azure", "local"})
 
@@ -41,7 +45,7 @@ def _require_provider(provider: str) -> None:
 
 @router.get("/llms", response_model=list[LlmOut])
 async def list_llms(
-    _current: CurrentUser = Depends(get_current_user),
+    _current: CurrentUser = Depends(_use_models),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
@@ -55,7 +59,7 @@ async def list_llms(
 @router.post("/llms", response_model=LlmOut)
 async def create_llm(
     body: LlmCreateBody,
-    _current: CurrentUser = Depends(get_current_user),
+    _current: CurrentUser = Depends(_ctrl_models),
     session: AsyncSession = Depends(db_session),
 ) -> LlmOut:
     _require_provider(body.provider)
@@ -79,7 +83,7 @@ async def create_llm(
 @router.get("/llms/{llm_id}", response_model=LlmOut)
 async def get_llm(
     llm_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    _current: CurrentUser = Depends(_use_models),
     session: AsyncSession = Depends(db_session),
 ) -> LlmOut:
     repos = get_repositories(session)
@@ -93,7 +97,7 @@ async def get_llm(
 async def patch_llm(
     llm_id: UUID,
     body: LlmPatchBody,
-    _current: CurrentUser = Depends(get_current_user),
+    _current: CurrentUser = Depends(_ctrl_models),
     session: AsyncSession = Depends(db_session),
 ) -> LlmOut:
     repos = get_repositories(session)
@@ -124,7 +128,7 @@ async def patch_llm(
 @router.post("/llms/{llm_id}/deactivate", response_model=LlmOut)
 async def deactivate_llm(
     llm_id: UUID,
-    _current: CurrentUser = Depends(get_current_user),
+    _current: CurrentUser = Depends(_ctrl_models),
     session: AsyncSession = Depends(db_session),
 ) -> LlmOut:
     repos = get_repositories(session)

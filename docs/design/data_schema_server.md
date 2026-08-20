@@ -285,6 +285,20 @@
 | `check()` | `PermissionCheckRequest` | `PermissionCheckResult` | 超管直通；否则合并用户角色与 Asset grant |
 | `list_accessible_assets()` | `user_id`, `asset_type`, `action` | `list[AssetRef]` | 列出某动作下可访问资源 |
 
+#### AccessControl（应用绑定 ∪ grant）
+
+##### 类 `AccessControl`
+
+应用两档与配置资源可见性。`is_superuser` 全放行。应用绑定 `resource_type=application`；配置绑定 `profile`/`skill`/`tool`/`mcp_server`。组织不沿父级继承。
+
+##### 运行方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `can_use_app` / `can_control_app` | 可见可用 vs 修改与完全控制 |
+| `can_see_agent_resource` / `visible_resource_ids` | 配置行级 |
+| `sees_all_agent_config` | 超管或 agent_config 完全控制 |
+
 ### 序列化对象
 
 #### Login Credentials
@@ -810,20 +824,20 @@ Check：`(flow_id IS NULL) <> (profile_id IS NULL)`。HTTP 管理面允许绑工
 
 ##### ORM 表 `agent_resource_binding`
 
-配置资源与 RBAC 主体的绑定。第 1 轮只落库，**不**按绑定过滤可见性、不调用 `PermissionService`。以后审核见 `docs/plan/unreached/2026-08-20-RBAC绑定可见性与管理员创建-服务层应用层-修改.md`。
+配置资源或应用资产与 RBAC 主体的绑定。HTTP 按绑定过滤可见性；应用入口另与 `PermissionService` 角色 grant 并集。平台管理员（`is_superuser`）跳过绑定。
 
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
 | `id` | UUID | PK | |
-| `resource_type` | VARCHAR(16) | NOT NULL | `profile` / `skill` / `tool` / `mcp_server` |
-| `resource_id` | UUID | NOT NULL | 对应配置表主键 |
+| `resource_type` | VARCHAR(16) | NOT NULL | `application` / `profile` / `skill` / `tool` / `mcp_server` |
+| `resource_id` | UUID | NOT NULL | 配置表主键，或 `sys_asset.id`（应用） |
 | `subject_type` | VARCHAR(16) | NOT NULL | `organization` / `department` / `role` / `user` |
 | `subject_id` | UUID | NOT NULL | 主体 id |
-| `actions` | JSONB | NOT NULL | 如 `["read","use"]`；以后管理员用 `admin` |
+| `actions` | JSONB | NOT NULL | 可见可用 `read`/`use`；完全控制 `write`/`admin` |
 | `created_at` | TIMESTAMPTZ | NOT NULL | |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | |
 
-唯一约束：`UNIQUE (resource_type, resource_id, subject_type, subject_id)`。索引：`idx_agent_resource_binding_resource (resource_type, resource_id)`。
+唯一约束：`UNIQUE (resource_type, resource_id, subject_type, subject_id)`。索引：`idx_agent_resource_binding_resource (resource_type, resource_id)`、`idx_agent_resource_binding_subject (resource_type, subject_type, subject_id)`。
 
 创建 Profile / Skill / Tool / MCP 时同时写入 `sys_asset`：`asset_type` 同上，`asset_key` 为资源 UUID 字符串（改 `code` 不影响授权键）。`agent_profile.owner_organization_id` **不是** ACL，列保留。
 

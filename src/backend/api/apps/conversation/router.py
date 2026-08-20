@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.access import require_app, require_app_detached
 from api.apps.conversation.schemas import (
     ConversationCreateBody,
     ConversationDetailOut,
@@ -22,8 +23,6 @@ from api.apps.conversation.schemas import (
 from api.deps import (
     CurrentUser,
     db_session,
-    get_current_user,
-    get_current_user_detached,
     get_workflow_runtime,
 )
 from api.errors import http_error
@@ -31,12 +30,17 @@ from api.sse.bus import publish_sse
 from api.sse.protocol import run_submitted_event
 from api.sse.stream import conversation_sse_iter
 from data_schema.conversation.models import Conversation, Message
+from service.auth.access import AccessControl
 from service.database.session import session_scope
 from service.persistence.factory import get_repositories
 from service.runtime.schemas import RunStatePayload, StartRunRequest
 from service.runtime.service import WorkflowRuntimeService
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["conversation"])
+
+_use_conversation = require_app("conversation")
+_ctrl_conversation = require_app("conversation", control=True)
+_use_conversation_sse = require_app_detached("conversation")
 
 APP_KEY_PLANNER = "planner"
 APP_KEY_WORKFLOW = "workflow"
@@ -107,11 +111,18 @@ async def _owned_conversation(
     return conv
 
 
-async def _ensure_profile(session: AsyncSession, profile_id: UUID) -> None:
+async def _ensure_profile_usable(
+    session: AsyncSession,
+    current: CurrentUser,
+    profile_id: UUID,
+) -> None:
     repos = get_repositories(session)
     profile = await repos.agent.profile.get(profile_id)
     if profile is None:
-        raise http_error(400, "profile_not_found", "规划配置不存在")
+        raise http_error(404, "profile_not_found", "规划配置不存在")
+    access = AccessControl(session)
+    if not await access.can_see_agent_resource(current.id, "profile", profile_id):
+        raise http_error(404, "profile_not_found", "规划配置不存在")
 
 
 def _metadata_profile_id(metadata: dict[str, object]) -> UUID | None:
@@ -231,7 +242,7 @@ async def _send_workflow_message(
 
 @router.get("/planner", response_model=list[ConversationOut])
 async def list_planner_conversations(
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_conversation),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
@@ -242,10 +253,10 @@ async def list_planner_conversations(
 @router.post("/planner", response_model=ConversationDetailOut)
 async def create_planner_conversation(
     body: PlannerConversationCreateBody,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_conversation),
     session: AsyncSession = Depends(db_session),
 ) -> ConversationDetailOut:
-    await _ensure_profile(session, body.profile_id)
+    await _ensure_profile_usable(session, current, body.profile_id)
     extra = dict(body.metadata or {})
     extra["profile_id"] = str(body.profile_id)
     repos = get_repositories(session)
@@ -264,7 +275,7 @@ async def create_planner_conversation(
 @router.post("/planner/messages", response_model=SendMessageOut)
 async def send_planner_message(
     body: PlannerSendMessageBody,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_conversation),
     session: AsyncSession = Depends(db_session),
     runtime: WorkflowRuntimeService = Depends(get_workflow_runtime),
 ) -> SendMessageOut:
@@ -274,7 +285,7 @@ async def send_planner_message(
     if body.conversation_id is None:
         if profile_id is None:
             raise http_error(400, "profile_id_required", "发消息需要 profile_id")
-        await _ensure_profile(session, profile_id)
+        await _ensure_profile_usable(session, current, profile_id)
         extra_meta["profile_id"] = str(profile_id)
         conv = Conversation(
             user_id=current.id,
@@ -297,7 +308,7 @@ async def send_planner_message(
             conv.metadata_ = {**dict(conv.metadata_), "profile_id": str(profile_id)}
     if profile_id is None:
         raise http_error(400, "profile_id_required", "发消息需要 profile_id")
-    await _ensure_profile(session, profile_id)
+    await _ensure_profile_usable(session, current, profile_id)
 
     user_msg = Message(
         conversation_id=conv.id,
@@ -345,7 +356,7 @@ async def send_planner_message(
 @router.get("/planner/{conversation_id}", response_model=ConversationDetailOut)
 async def get_planner_conversation(
     conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_conversation),
     session: AsyncSession = Depends(db_session),
 ) -> ConversationDetailOut:
     conv = await _owned_conversation(session, current, conversation_id, PLANNER_APP_KEYS)
@@ -355,7 +366,7 @@ async def get_planner_conversation(
 @router.get("/planner/{conversation_id}/messages", response_model=list[MessageOut])
 async def list_planner_messages(
     conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_conversation),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 100,
@@ -368,7 +379,7 @@ async def list_planner_messages(
 @router.get("/planner/{conversation_id}/events")
 async def subscribe_planner_events(
     conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user_detached),
+    current: CurrentUser = Depends(_use_conversation_sse),
 ) -> StreamingResponse:
     async with session_scope() as session:
         await _owned_conversation(session, current, conversation_id, PLANNER_APP_KEYS)
@@ -380,7 +391,7 @@ async def subscribe_planner_events(
 
 @router.get("/workflow", response_model=list[ConversationOut])
 async def list_workflow_conversations(
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_conversation),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
@@ -391,7 +402,7 @@ async def list_workflow_conversations(
 @router.post("/workflow", response_model=ConversationOut)
 async def create_workflow_conversation(
     body: ConversationCreateBody,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_conversation),
     session: AsyncSession = Depends(db_session),
 ) -> ConversationOut:
     repos = get_repositories(session)
@@ -410,7 +421,7 @@ async def create_workflow_conversation(
 @router.post("/workflow/messages", response_model=SendMessageOut)
 async def send_workflow_message(
     body: SendMessageBody,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_conversation),
     session: AsyncSession = Depends(db_session),
     runtime: WorkflowRuntimeService = Depends(get_workflow_runtime),
 ) -> SendMessageOut:
@@ -422,7 +433,7 @@ async def send_workflow_message(
 @router.get("/workflow/{conversation_id}", response_model=ConversationDetailOut)
 async def get_workflow_conversation(
     conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_conversation),
     session: AsyncSession = Depends(db_session),
 ) -> ConversationDetailOut:
     conv = await _owned_conversation(session, current, conversation_id, WORKFLOW_APP_KEYS)
@@ -432,7 +443,7 @@ async def get_workflow_conversation(
 @router.get("/workflow/{conversation_id}/messages", response_model=list[MessageOut])
 async def list_workflow_messages(
     conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_conversation),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 100,
@@ -445,7 +456,7 @@ async def list_workflow_messages(
 @router.get("/workflow/{conversation_id}/events")
 async def subscribe_workflow_events(
     conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user_detached),
+    current: CurrentUser = Depends(_use_conversation_sse),
 ) -> StreamingResponse:
     async with session_scope() as session:
         await _owned_conversation(session, current, conversation_id, WORKFLOW_APP_KEYS)
@@ -457,7 +468,7 @@ async def subscribe_workflow_events(
 
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_conversation),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 50,
@@ -468,7 +479,7 @@ async def list_conversations(
 @router.post("", response_model=ConversationOut)
 async def create_conversation(
     body: ConversationCreateBody,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_conversation),
     session: AsyncSession = Depends(db_session),
 ) -> ConversationOut:
     repos = get_repositories(session)
@@ -487,7 +498,7 @@ async def create_conversation(
 @router.post("/messages", response_model=SendMessageOut)
 async def send_message(
     body: SendMessageBody,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_ctrl_conversation),
     session: AsyncSession = Depends(db_session),
     runtime: WorkflowRuntimeService = Depends(get_workflow_runtime),
 ) -> SendMessageOut:
@@ -502,7 +513,7 @@ async def send_message(
 @router.get("/{conversation_id}", response_model=ConversationDetailOut)
 async def get_conversation(
     conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_conversation),
     session: AsyncSession = Depends(db_session),
 ) -> ConversationDetailOut:
     conv = await _owned_conversation(session, current, conversation_id, WORKFLOW_APP_KEYS)
@@ -512,7 +523,7 @@ async def get_conversation(
 @router.get("/{conversation_id}/messages", response_model=list[MessageOut])
 async def list_messages(
     conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(_use_conversation),
     session: AsyncSession = Depends(db_session),
     offset: int = 0,
     limit: int = 100,
@@ -525,7 +536,7 @@ async def list_messages(
 @router.get("/{conversation_id}/events")
 async def subscribe_events(
     conversation_id: UUID,
-    current: CurrentUser = Depends(get_current_user_detached),
+    current: CurrentUser = Depends(_use_conversation_sse),
 ) -> StreamingResponse:
     async with session_scope() as session:
         await _owned_conversation(session, current, conversation_id, WORKFLOW_APP_KEYS)

@@ -56,6 +56,7 @@ async def _user() -> User:
             organization_id=org.id,
             status="active",
             password_hash=hash_password("pw-ok"),
+            is_superuser=True,
         )
         session.add(user)
         await session.flush()

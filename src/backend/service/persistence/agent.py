@@ -1,8 +1,9 @@
 """Agent 配置域仓储。"""
 
 import uuid
+from collections.abc import Sequence
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.agent.models import (
@@ -98,6 +99,50 @@ class AgentConfigRepository:
         stmt = select(AgentResourceBinding).where(
             AgentResourceBinding.resource_type == resource_type,
             AgentResourceBinding.resource_id == resource_id,
+        )
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
+    async def list_bindings_for_subjects(
+        self,
+        resource_type: str,
+        subjects: Sequence[tuple[str, uuid.UUID]],
+    ) -> list[AgentResourceBinding]:
+        if not subjects:
+            return []
+        conditions = [
+            and_(
+                AgentResourceBinding.subject_type == subject_type,
+                AgentResourceBinding.subject_id == subject_id,
+            )
+            for subject_type, subject_id in subjects
+        ]
+        stmt = select(AgentResourceBinding).where(
+            AgentResourceBinding.resource_type == resource_type,
+            or_(*conditions),
+        )
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
+    async def list_bindings_for_resource_subjects(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        subjects: Sequence[tuple[str, uuid.UUID]],
+    ) -> list[AgentResourceBinding]:
+        if not subjects:
+            return []
+        conditions = [
+            and_(
+                AgentResourceBinding.subject_type == subject_type,
+                AgentResourceBinding.subject_id == subject_id,
+            )
+            for subject_type, subject_id in subjects
+        ]
+        stmt = select(AgentResourceBinding).where(
+            AgentResourceBinding.resource_type == resource_type,
+            AgentResourceBinding.resource_id == resource_id,
+            or_(*conditions),
         )
         result = await self._session.scalars(stmt)
         return list(result.all())
