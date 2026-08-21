@@ -7,6 +7,7 @@ TASK_EXPIRE_HITL = "service.celery_app.tasks.expire_hitl_pending"
 TASK_EXPIRE_CHILD = "service.celery_app.tasks.expire_child_run_pending"
 TASK_INGEST = "service.celery_app.tasks.ingest_knowledge_doc"
 TASK_LDAP_SYNC = "service.celery_app.tasks.sync_ldap_directory"
+TASK_PURGE_SOFT_DELETED = "service.celery_app.tasks.purge_soft_deleted"
 
 RUN_PENDING = "pending"
 RUN_RUNNING = "running"

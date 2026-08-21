@@ -180,6 +180,13 @@ async def test_planner_and_workflow_paths(
     roles = {item["role"] for item in msgs.json()}
     assert roles == {"user", "assistant"}
 
+    deleted = await client.delete(f"/api/v1/conversations/planner/{pid}", headers=headers)
+    assert deleted.status_code == 200
+    listed_after = await client.get("/api/v1/conversations/planner", headers=headers)
+    assert listed_after.json() == []
+    gone = await client.get(f"/api/v1/conversations/planner/{pid}", headers=headers)
+    assert gone.status_code == 404
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -201,3 +208,31 @@ async def test_planner_forbidden_other_user(
     denied = await client.get(f"/api/v1/conversations/planner/{cid}", headers=other_h)
     assert denied.status_code == 403
     assert denied.json()["code"] == "conversation_forbidden"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_delete_profile_after_soft_deleted_planner_conversation(
+    api_client: tuple[AsyncClient, FakeWorkflowRuntime],
+) -> None:
+    client, _fake = api_client
+    user = await _user("dp")
+    headers = await _login(client, user)
+    profile_id = await _create_profile(client, headers)
+    created = await client.post(
+        "/api/v1/conversations/planner",
+        headers=headers,
+        json={"title": "keep", "profile_id": profile_id},
+    )
+    assert created.status_code == 200
+    cid = created.json()["id"]
+
+    blocked = await client.delete(f"/api/v1/agent-config/profiles/{profile_id}", headers=headers)
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "profile_in_use"
+
+    removed = await client.delete(f"/api/v1/conversations/planner/{cid}", headers=headers)
+    assert removed.status_code == 200
+    deleted = await client.delete(f"/api/v1/agent-config/profiles/{profile_id}", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "deleted"

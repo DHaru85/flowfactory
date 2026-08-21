@@ -13,6 +13,7 @@ from service.runtime.constants import (
     TASK_EXPIRE_HITL,
     TASK_INGEST,
     TASK_LDAP_SYNC,
+    TASK_PURGE_SOFT_DELETED,
     TASK_RESUME,
     TASK_RUN,
 )
@@ -74,6 +75,20 @@ def expire_child_run_pending() -> int:
     from service.runtime.scheduler import expire_due_child_pending
 
     return run_coro_factory(expire_due_child_pending)
+
+
+@celery_app.task(name=TASK_PURGE_SOFT_DELETED)
+def purge_soft_deleted() -> dict[str, int]:
+    from service.database.session import session_scope
+    from service.persistence.purge import purge_expired_soft_deleted
+
+    async def _run() -> dict[str, int]:
+        async with session_scope() as session:
+            return await purge_expired_soft_deleted(session)
+
+    result = run_coro_factory(_run)
+    logger.info("软删清理完成 {}", result)
+    return result
 
 
 @celery_app.task(name=TASK_INGEST)

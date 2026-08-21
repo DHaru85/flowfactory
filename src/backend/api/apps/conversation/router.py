@@ -166,6 +166,17 @@ async def _owned_conversation(
     return conv
 
 
+async def _soft_delete_owned(
+    session: AsyncSession,
+    current: CurrentUser,
+    conversation_id: UUID,
+    allowed_app_keys: Sequence[str],
+) -> None:
+    conv = await _owned_conversation(session, current, conversation_id, allowed_app_keys)
+    repos = get_repositories(session)
+    await repos.conversation.soft_delete_conversation(conv.id)
+
+
 async def _ensure_profile_usable(
     session: AsyncSession,
     current: CurrentUser,
@@ -444,7 +455,14 @@ async def subscribe_planner_events(
     return _sse_response(conversation_id)
 
 
-# --- workflow ---
+@router.delete("/planner/{conversation_id}")
+async def delete_planner_conversation(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(_ctrl_conversation),
+    session: AsyncSession = Depends(db_session),
+) -> dict[str, str]:
+    await _soft_delete_owned(session, current, conversation_id, PLANNER_APP_KEYS)
+    return {"status": "deleted"}
 
 
 @router.get("/workflow", response_model=list[ConversationOut])
@@ -566,6 +584,16 @@ async def subscribe_workflow_events(
     return _sse_response(conversation_id)
 
 
+@router.delete("/workflow/{conversation_id}")
+async def delete_workflow_conversation(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(_ctrl_conversation),
+    session: AsyncSession = Depends(db_session),
+) -> dict[str, str]:
+    await _soft_delete_owned(session, current, conversation_id, WORKFLOW_APP_KEYS)
+    return {"status": "deleted"}
+
+
 # --- 兼容别名：与 /workflow* 相同 ---
 
 
@@ -644,3 +672,13 @@ async def subscribe_events(
     async with session_scope() as session:
         await _owned_conversation(session, current, conversation_id, WORKFLOW_APP_KEYS)
     return _sse_response(conversation_id)
+
+
+@router.delete("/{conversation_id}")
+async def delete_legacy_conversation(
+    conversation_id: UUID,
+    current: CurrentUser = Depends(_ctrl_conversation),
+    session: AsyncSession = Depends(db_session),
+) -> dict[str, str]:
+    await _soft_delete_owned(session, current, conversation_id, WORKFLOW_APP_KEYS)
+    return {"status": "deleted"}

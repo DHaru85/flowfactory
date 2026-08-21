@@ -16,6 +16,7 @@ import { ModelsPage } from "@/pages/ModelsPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { StudioCanvasPage } from "@/pages/StudioCanvasPage";
 import { StudioListPage } from "@/pages/StudioListPage";
+import { UsersPage } from "@/pages/UsersPage";
 import type { AppVisibilityOut, MeOut } from "@/types";
 
 function HomeRedirect({ apps }: { apps: AppVisibilityOut[] }): ReactElement {
@@ -32,6 +33,21 @@ function HomeRedirect({ apps }: { apps: AppVisibilityOut[] }): ReactElement {
     return <Navigate to="/studio" replace />;
   }
   return <div>当前账号没有可打开的应用，请联系管理员绑定。</div>;
+}
+
+function GuardControl({
+  appKey,
+  children,
+  apps,
+}: {
+  appKey: string;
+  children: ReactElement;
+  apps: AppVisibilityOut[];
+}): ReactElement {
+  if (!findApp(apps, appKey)?.can_control) {
+    return <div>无权访问该应用</div>;
+  }
+  return children;
 }
 
 function Guard({
@@ -81,6 +97,14 @@ function AuthedApp(): ReactElement {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<HomeRedirect apps={apps} />} />
+          <Route
+            path="/users"
+            element={
+              <GuardControl appKey="auth" apps={apps}>
+                <UsersPage />
+              </GuardControl>
+            }
+          />
           <Route
             path="/planner"
             element={

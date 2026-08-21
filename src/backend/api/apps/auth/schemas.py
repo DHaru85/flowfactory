@@ -1,5 +1,9 @@
 """鉴权 HTTP 请求体。"""
 
+from datetime import datetime
+from typing import Literal
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 
@@ -27,3 +31,18 @@ class AppVisibilityOut(BaseModel):
     name: str
     can_use: bool
     can_control: bool
+
+
+class UserOut(BaseModel):
+    id: UUID
+    username: str
+    display_name: str
+    status: str
+    organization_id: UUID
+    department_id: UUID | None
+    is_superuser: bool
+    last_login_at: datetime | None
+
+
+class UserStatusPatch(BaseModel):
+    status: Literal["active", "disabled", "banned"]

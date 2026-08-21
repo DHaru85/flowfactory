@@ -138,6 +138,11 @@ async def test_models_llm_secret_not_returned(api_client: AsyncClient) -> None:
     assert off.status_code == 200
     assert off.json()["is_active"] is False
 
+    removed = await api_client.delete(f"/api/v1/models/llms/{llm_id}", headers=headers)
+    assert removed.status_code == 200
+    missing = await api_client.get(f"/api/v1/models/llms/{llm_id}", headers=headers)
+    assert missing.status_code == 404
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio

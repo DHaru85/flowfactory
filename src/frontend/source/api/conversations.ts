@@ -84,3 +84,7 @@ export async function resumeHitl(hitlId: string, body: HitlResumeBody): Promise<
   );
   return data;
 }
+
+export async function deleteConversation(scene: ChatScene, id: string): Promise<void> {
+  await http.delete(`/conversations/${scene}/${id}`);
+}

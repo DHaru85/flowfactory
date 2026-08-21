@@ -20,3 +20,7 @@ export async function deactivateLlm(id: string): Promise<LlmOut> {
   const { data } = await http.post<LlmOut>(`/models/llms/${id}/deactivate`);
   return data;
 }
+
+export async function deleteLlm(id: string): Promise<void> {
+  await http.delete(`/models/llms/${id}`);
+}

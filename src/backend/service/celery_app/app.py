@@ -1,6 +1,7 @@
 """Celery 应用实例。"""
 
 from celery import Celery
+from celery.schedules import crontab
 
 from settings.config import get_settings
 
@@ -24,6 +25,13 @@ def create_celery_app() -> Celery:
         "expire-child-run-pending": {
             "task": "service.celery_app.tasks.expire_child_run_pending",
             "schedule": float(cfg.beat_tick_seconds),
+        },
+        "purge-soft-deleted": {
+            "task": "service.celery_app.tasks.purge_soft_deleted",
+            "schedule": crontab(
+                hour=cfg.soft_delete_purge_hour,
+                minute=cfg.soft_delete_purge_minute,
+            ),
         },
     }
     if cfg.ldap_sync_beat_enabled:
@@ -58,6 +66,7 @@ def create_celery_app() -> Celery:
             "service.celery_app.tasks.expire_child_run_pending": {"queue": cfg.celery_queue_beat},
             "service.celery_app.tasks.ingest_knowledge_doc": {"queue": cfg.celery_queue_ingest},
             "service.celery_app.tasks.sync_ldap_directory": {"queue": cfg.celery_queue_beat},
+            "service.celery_app.tasks.purge_soft_deleted": {"queue": cfg.celery_queue_beat},
         },
     )
     return app

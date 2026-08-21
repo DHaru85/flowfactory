@@ -3,11 +3,12 @@
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.agent.models import (
     AgentBeatTask,
+    AgentCheckpointSchema,
     AgentFlow,
     AgentLlm,
     AgentMcpServer,
@@ -177,7 +178,7 @@ class AgentConfigRepository:
         status: str | None = None,
         code: str | None = None,
     ) -> list[AgentFlow]:
-        stmt = select(AgentFlow)
+        stmt = select(AgentFlow).where(AgentFlow.status != "deleted")
         if status is not None:
             stmt = stmt.where(AgentFlow.status == status)
         if code is not None:
@@ -209,3 +210,63 @@ class AgentConfigRepository:
         result = await self._session.scalars(stmt)
         for row in result.all():
             row.status = "archived"
+
+    async def count_profiles_for_llm(self, llm_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(AgentProfile).where(
+            AgentProfile.default_llm_id == llm_id
+        )
+        return int(await self._session.scalar(stmt) or 0)
+
+    async def count_flows_for_profile(self, profile_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(AgentFlow).where(
+            AgentFlow.profile_id == profile_id,
+            AgentFlow.status != "deleted",
+        )
+        return int(await self._session.scalar(stmt) or 0)
+
+    async def drop_deleted_flows_for_profile(self, profile_id: uuid.UUID) -> None:
+        """去掉已软删 Flow 对 Profile 的外键占用，以便硬删 Profile。"""
+        stmt = select(AgentFlow).where(
+            AgentFlow.profile_id == profile_id,
+            AgentFlow.status == "deleted",
+        )
+        result = await self._session.scalars(stmt)
+        for flow in result.all():
+            await self._session.execute(
+                delete(AgentCheckpointSchema).where(AgentCheckpointSchema.flow_id == flow.id)
+            )
+            await self._session.delete(flow)
+
+    async def count_beats_for_profile(self, profile_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(AgentBeatTask).where(
+            AgentBeatTask.profile_id == profile_id
+        )
+        return int(await self._session.scalar(stmt) or 0)
+
+    async def count_beats_for_flow(self, flow_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(AgentBeatTask).where(
+            AgentBeatTask.flow_id == flow_id
+        )
+        return int(await self._session.scalar(stmt) or 0)
+
+    async def count_tools_for_mcp(self, server_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(AgentTool).where(
+            AgentTool.mcp_server_id == server_id
+        )
+        return int(await self._session.scalar(stmt) or 0)
+
+    async def skill_id_in_use(self, skill_id: uuid.UUID) -> bool:
+        key = str(skill_id)
+        rows = await self._session.scalars(select(AgentProfile.skill_ids))
+        for raw in rows.all():
+            if isinstance(raw, list) and key in {str(item) for item in raw}:
+                return True
+        return False
+
+    async def tool_id_in_use(self, tool_id: uuid.UUID) -> bool:
+        key = str(tool_id)
+        rows = await self._session.scalars(select(AgentSkill.tool_ids))
+        for raw in rows.all():
+            if isinstance(raw, list) and key in {str(item) for item in raw}:
+                return True
+        return False

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } 
 
 import { listProfiles } from "@/api/agentConfig";
 import { errorMessage } from "@/api/client";
+import { ConfirmDelete } from "@/components/ConfirmDelete";
 import {
   createPlannerConversation,
   createWorkflowConversation,
@@ -13,6 +14,7 @@ import {
   resumeHitl,
   sendPlannerMessage,
   sendWorkflowMessage,
+  deleteConversation,
   type ChatScene,
 } from "@/api/conversations";
 import { listStudioFlows, listStudioProfiles } from "@/api/studio";
@@ -276,7 +278,24 @@ export function ChatPage({ scene }: Props): ReactElement {
           activeKey={activeId}
           items={convs.map((item) => ({
             key: item.id,
-            label: item.title || item.id.slice(0, 8),
+            label: (
+              <Flex justify="space-between" align="center" gap={8} style={{ width: "100%" }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {item.title || item.id.slice(0, 8)}
+                </span>
+                {canControl ? (
+                  <ConfirmDelete
+                    onConfirm={async () => {
+                      await deleteConversation(scene, item.id);
+                      if (activeId === item.id) {
+                        setActiveId(undefined);
+                      }
+                      await reloadConvs();
+                    }}
+                  />
+                ) : null}
+              </Flex>
+            ),
           }))}
           onActiveChange={(key) => setActiveId(key)}
         />

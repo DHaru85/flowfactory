@@ -192,3 +192,11 @@ async def test_studio_flow_lifecycle(api_client: AsyncClient) -> None:
     tools = await api_client.get("/api/v1/studio/tools", headers=headers)
     assert tools.status_code == 200
     assert tools.json()
+
+    removed = await api_client.delete(f"/api/v1/studio/flows/{flow_id}", headers=headers)
+    assert removed.status_code == 200
+    listed = await api_client.get("/api/v1/studio/flows", headers=headers)
+    assert listed.status_code == 200
+    assert all(item["id"] != flow_id for item in listed.json())
+    gone = await api_client.get(f"/api/v1/studio/flows/{flow_id}", headers=headers)
+    assert gone.status_code == 404

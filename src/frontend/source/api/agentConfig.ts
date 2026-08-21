@@ -164,3 +164,23 @@ export async function putBindings(
   const { data } = await http.put<BindingItem[]>(`/agent-config/${kind}/${id}/bindings`, body);
   return data;
 }
+
+export async function deleteProfile(id: string): Promise<void> {
+  await http.delete(`/agent-config/profiles/${id}`);
+}
+
+export async function deleteSkill(id: string): Promise<void> {
+  await http.delete(`/agent-config/skills/${id}`);
+}
+
+export async function deleteTool(id: string): Promise<void> {
+  await http.delete(`/agent-config/tools/${id}`);
+}
+
+export async function deleteMcp(id: string): Promise<void> {
+  await http.delete(`/agent-config/mcp-servers/${id}`);
+}
+
+export async function deleteBeat(id: string): Promise<void> {
+  await http.delete(`/agent-config/beat-tasks/${id}`);
+}

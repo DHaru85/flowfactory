@@ -48,6 +48,9 @@ class Settings(BaseSettings):
 
     beat_system_user_id: str | None = None
     beat_tick_seconds: int = 60
+    soft_delete_retention_days: int = 7
+    soft_delete_purge_hour: int = 3
+    soft_delete_purge_minute: int = 17
     hitl_default_ttl_seconds: int = 86400
 
     llm_base_url: str = "http://192.168.129.50:8122/v1"

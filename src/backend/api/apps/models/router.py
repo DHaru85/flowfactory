@@ -152,3 +152,20 @@ async def deactivate_llm(
     row.is_active = False
     logger.info("停用 LLM id={}", row.id)
     return _to_out(row)
+
+
+@router.delete("/llms/{llm_id}")
+async def delete_llm(
+    llm_id: UUID,
+    _current: CurrentUser = Depends(_ctrl_models),
+    session: AsyncSession = Depends(db_session),
+) -> dict[str, str]:
+    repos = get_repositories(session)
+    row = await repos.agent.llm.get(llm_id)
+    if row is None:
+        raise http_error(404, "llm_not_found", "模型不存在")
+    if await repos.agent.count_profiles_for_llm(llm_id) > 0:
+        raise http_error(409, "llm_in_use", "模型仍被 Profile 引用，不可删除")
+    await session.delete(row)
+    logger.info("删除 LLM id={}", llm_id)
+    return {"status": "deleted"}

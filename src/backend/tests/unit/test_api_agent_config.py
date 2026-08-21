@@ -241,3 +241,26 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         assert mcp_asset is not None
         tool_asset = await repos.permission.get_asset_by_key("tool", tool_id)
         assert tool_asset is not None
+
+    blocked = await api_client.delete(
+        f"/api/v1/agent-config/profiles/{profile_id}",
+        headers=headers,
+    )
+    assert blocked.status_code == 409
+    extra = await api_client.post(
+        "/api/v1/agent-config/skills",
+        headers=headers,
+        json={"code": f"s-x-{suffix}", "name": "extra", "tool_ids": [], "prompt_template": None},
+    )
+    assert extra.status_code == 200
+    extra_id = extra.json()["id"]
+    removed = await api_client.delete(
+        f"/api/v1/agent-config/skills/{extra_id}",
+        headers=headers,
+    )
+    assert removed.status_code == 200
+    beat_del = await api_client.delete(
+        f"/api/v1/agent-config/beat-tasks/{planner_beat.json()['id']}",
+        headers=headers,
+    )
+    assert beat_del.status_code == 200

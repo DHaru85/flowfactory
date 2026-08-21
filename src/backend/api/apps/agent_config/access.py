@@ -139,6 +139,18 @@ async def _load_visible_rows(
     return await repo.list_by_ids(ids, offset=offset, limit=bound)
 
 
+async def drop_config_resource(
+    session: AsyncSession,
+    resource_type: str,
+    resource_id: UUID,
+) -> None:
+    repos = get_repositories(session)
+    await repos.agent.replace_bindings(resource_type, resource_id, [])
+    asset = await repos.permission.get_asset_by_key(resource_type, str(resource_id))
+    if asset is not None:
+        await session.delete(asset)
+
+
 async def load_visible_profile_rows(
     session: AsyncSession,
     user_id: UUID,

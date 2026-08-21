@@ -28,6 +28,21 @@ export interface MeOut {
   username: string;
   organization_id: string;
   roles: string[];
+  is_superuser?: boolean;
+  status?: string;
+}
+
+export type UserAccountStatus = "active" | "disabled" | "banned";
+
+export interface UserAccountOut {
+  id: string;
+  username: string;
+  display_name: string;
+  status: UserAccountStatus;
+  organization_id: string;
+  department_id: string | null;
+  is_superuser: boolean;
+  last_login_at: string | null;
 }
 
 export interface AppVisibilityOut {

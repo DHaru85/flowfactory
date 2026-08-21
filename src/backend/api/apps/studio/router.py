@@ -82,7 +82,7 @@ def _to_out(row: AgentFlow) -> FlowOut:
 async def _get_flow(session: AsyncSession, flow_id: UUID) -> AgentFlow:
     repos = get_repositories(session)
     flow = await repos.agent.flow.get(flow_id)
-    if flow is None:
+    if flow is None or flow.status == "deleted":
         raise http_error(404, "flow_not_found", "工作流不存在")
     return flow
 
@@ -302,3 +302,21 @@ async def new_draft(
         raise http_error(409, "flow_code_version_conflict", "下一版本已存在") from exc
     logger.info("Studio 新草稿 id={} from={}", draft.id, source.id)
     return _to_out(draft)
+
+
+@router.delete("/flows/{flow_id}")
+async def delete_flow(
+    flow_id: UUID,
+    current: CurrentUser = Depends(_ctrl_studio),
+    session: AsyncSession = Depends(db_session),
+) -> dict[str, str]:
+    _ = current
+    flow = await _get_flow(session, flow_id)
+    repos = get_repositories(session)
+    if await repos.agent.count_beats_for_flow(flow.id) > 0:
+        raise http_error(409, "flow_in_use", "工作流仍被定时任务引用，不可删除")
+    if await repos.conversation.count_active_by_flow(flow.id) > 0:
+        raise http_error(409, "flow_in_use", "工作流仍被未删除会话引用，不可删除")
+    flow.status = "deleted"
+    logger.info("Studio 软删 Flow id={}", flow.id)
+    return {"status": "deleted"}

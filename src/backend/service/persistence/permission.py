@@ -114,6 +114,23 @@ class PermissionRepository:
         result = await self._session.execute(stmt)
         return int(result.rowcount or 0)
 
+    async def list_users_in_scope(
+        self,
+        *,
+        organization_id: uuid.UUID | None,
+        department_id: uuid.UUID | None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[User]:
+        stmt = select(User).where(User.deleted_at.is_(None))
+        if organization_id is not None:
+            stmt = stmt.where(User.organization_id == organization_id)
+        if department_id is not None:
+            stmt = stmt.where(User.department_id == department_id)
+        stmt = stmt.order_by(User.created_at.desc()).offset(offset).limit(limit)
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
     async def get_external_identity(
         self,
         provider: str,

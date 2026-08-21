@@ -6,6 +6,7 @@ import {
   DeploymentUnitOutlined,
   LogoutOutlined,
   RobotOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import { Layout, Menu, Typography } from "antd";
 import { useMemo, type ReactElement, type ReactNode } from "react";
@@ -58,6 +59,13 @@ export function AppShell(): ReactElement {
         key: "/agent-config",
         icon: <DeploymentUnitOutlined />,
         label: <Link to="/agent-config">Agent 配置</Link>,
+      });
+    }
+    if (findApp(apps, "auth")?.can_control) {
+      result.unshift({
+        key: "/users",
+        icon: <UserOutlined />,
+        label: <Link to="/users">用户</Link>,
       });
     }
     return result;

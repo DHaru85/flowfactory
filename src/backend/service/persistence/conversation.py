@@ -2,8 +2,9 @@
 
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.conversation.models import Conversation, Message
@@ -45,7 +46,10 @@ class ConversationRepository:
     ) -> list[Message]:
         stmt = (
             select(Message)
-            .where(Message.conversation_id == conversation_id)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.status != "deleted",
+            )
             .order_by(Message.created_at)
             .offset(offset)
             .limit(limit)
@@ -59,3 +63,30 @@ class ConversationRepository:
             Message.status == "streaming",
         )
         return await self._session.scalar(stmt)
+
+    async def count_active_by_flow(self, flow_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(Conversation).where(
+            Conversation.flow_id == flow_id,
+            Conversation.status != "deleted",
+        )
+        return int(await self._session.scalar(stmt) or 0)
+
+    async def count_active_by_profile(self, profile_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(Conversation).where(
+            Conversation.metadata_["profile_id"].astext == str(profile_id),
+            Conversation.status != "deleted",
+        )
+        return int(await self._session.scalar(stmt) or 0)
+
+    async def soft_delete_conversation(self, conversation_id: uuid.UUID) -> None:
+        now = datetime.now(UTC)
+        await self._session.execute(
+            update(Message)
+            .where(Message.conversation_id == conversation_id, Message.status != "deleted")
+            .values(status="deleted", updated_at=now)
+        )
+        await self._session.execute(
+            update(Conversation)
+            .where(Conversation.id == conversation_id)
+            .values(status="deleted", updated_at=now)
+        )

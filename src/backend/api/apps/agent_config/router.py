@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.access import require_app
 from api.apps.agent_config.access import (
     assert_config_visible,
+    drop_config_resource,
     load_bindings,
     load_visible_mcp_rows,
     load_visible_profile_rows,
@@ -277,6 +278,37 @@ async def patch_profile(
     return _profile_out(row)
 
 
+@router.delete("/profiles/{profile_id}")
+async def delete_profile(
+    profile_id: UUID,
+    current: CurrentUser = Depends(_ctrl_agent_config),
+    session: AsyncSession = Depends(db_session),
+) -> dict[str, str]:
+    await assert_config_visible(
+        session,
+        current.id,
+        "profile",
+        profile_id,
+        missing_code="profile_not_found",
+        missing_message="Profile 不存在",
+    )
+    repos = get_repositories(session)
+    row = await repos.agent.profile.get(profile_id)
+    if row is None:
+        raise http_error(404, "profile_not_found", "Profile 不存在")
+    if await repos.agent.count_flows_for_profile(profile_id) > 0:
+        raise http_error(409, "profile_in_use", "Profile 仍被工作流引用，不可删除")
+    if await repos.agent.count_beats_for_profile(profile_id) > 0:
+        raise http_error(409, "profile_in_use", "Profile 仍被定时任务引用，不可删除")
+    if await repos.conversation.count_active_by_profile(profile_id) > 0:
+        raise http_error(409, "profile_in_use", "Profile 仍被未删除会话引用，不可删除")
+    await repos.agent.drop_deleted_flows_for_profile(profile_id)
+    await drop_config_resource(session, "profile", profile_id)
+    await session.delete(row)
+    logger.info("删除 Profile id={}", profile_id)
+    return {"status": "deleted"}
+
+
 @router.get("/profiles/{profile_id}/bindings", response_model=list[BindingItem])
 async def get_profile_bindings(
     profile_id: UUID,
@@ -384,6 +416,32 @@ async def patch_skill(
         row.prompt_template = body.prompt_template
     await upsert_config_asset(session, asset_type="skill", resource_id=row.id, name=row.name)
     return _skill_out(row)
+
+
+@router.delete("/skills/{skill_id}")
+async def delete_skill(
+    skill_id: UUID,
+    current: CurrentUser = Depends(_ctrl_agent_config),
+    session: AsyncSession = Depends(db_session),
+) -> dict[str, str]:
+    await assert_config_visible(
+        session,
+        current.id,
+        "skill",
+        skill_id,
+        missing_code="skill_not_found",
+        missing_message="技能不存在",
+    )
+    repos = get_repositories(session)
+    row = await repos.agent.skill.get(skill_id)
+    if row is None:
+        raise http_error(404, "skill_not_found", "技能不存在")
+    if await repos.agent.skill_id_in_use(skill_id):
+        raise http_error(409, "skill_in_use", "技能仍被 Profile 引用，不可删除")
+    await drop_config_resource(session, "skill", skill_id)
+    await session.delete(row)
+    logger.info("删除 Skill id={}", skill_id)
+    return {"status": "deleted"}
 
 
 @router.get("/skills/{skill_id}/bindings", response_model=list[BindingItem])
@@ -500,6 +558,32 @@ async def patch_tool(
     return _tool_out(row)
 
 
+@router.delete("/tools/{tool_id}")
+async def delete_tool(
+    tool_id: UUID,
+    current: CurrentUser = Depends(_ctrl_agent_config),
+    session: AsyncSession = Depends(db_session),
+) -> dict[str, str]:
+    await assert_config_visible(
+        session,
+        current.id,
+        "tool",
+        tool_id,
+        missing_code="tool_not_found",
+        missing_message="工具不存在",
+    )
+    repos = get_repositories(session)
+    row = await repos.agent.tool.get(tool_id)
+    if row is None:
+        raise http_error(404, "tool_not_found", "工具不存在")
+    if await repos.agent.tool_id_in_use(tool_id):
+        raise http_error(409, "tool_in_use", "工具仍被 Skill 引用，不可删除")
+    await drop_config_resource(session, "tool", tool_id)
+    await session.delete(row)
+    logger.info("删除 Tool id={}", tool_id)
+    return {"status": "deleted"}
+
+
 @router.get("/tools/{tool_id}/bindings", response_model=list[BindingItem])
 async def get_tool_bindings(
     tool_id: UUID,
@@ -605,6 +689,32 @@ async def patch_mcp(
         row.is_active = body.is_active
     await upsert_config_asset(session, asset_type="mcp_server", resource_id=row.id, name=row.name)
     return _mcp_out(row)
+
+
+@router.delete("/mcp-servers/{server_id}")
+async def delete_mcp(
+    server_id: UUID,
+    current: CurrentUser = Depends(_ctrl_agent_config),
+    session: AsyncSession = Depends(db_session),
+) -> dict[str, str]:
+    await assert_config_visible(
+        session,
+        current.id,
+        "mcp_server",
+        server_id,
+        missing_code="mcp_server_not_found",
+        missing_message="MCP Server 不存在",
+    )
+    repos = get_repositories(session)
+    row = await repos.agent.mcp_server.get(server_id)
+    if row is None:
+        raise http_error(404, "mcp_server_not_found", "MCP Server 不存在")
+    if await repos.agent.count_tools_for_mcp(server_id) > 0:
+        raise http_error(409, "mcp_server_in_use", "MCP Server 仍被工具引用，不可删除")
+    await drop_config_resource(session, "mcp_server", server_id)
+    await session.delete(row)
+    logger.info("删除 MCP Server id={}", server_id)
+    return {"status": "deleted"}
 
 
 @router.get("/mcp-servers/{server_id}/bindings", response_model=list[BindingItem])
@@ -744,3 +854,19 @@ async def disable_beat(
         raise http_error(404, "beat_not_found", "定时任务不存在")
     row.is_enabled = False
     return _beat_out(row)
+
+
+@router.delete("/beat-tasks/{task_id}")
+async def delete_beat(
+    task_id: UUID,
+    current: CurrentUser = Depends(_ctrl_agent_config),
+    session: AsyncSession = Depends(db_session),
+) -> dict[str, str]:
+    _ = current
+    repos = get_repositories(session)
+    row = await repos.agent.beat_task.get(task_id)
+    if row is None:
+        raise http_error(404, "beat_not_found", "定时任务不存在")
+    await session.delete(row)
+    logger.info("删除 Beat id={}", task_id)
+    return {"status": "deleted"}

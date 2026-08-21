@@ -7,6 +7,11 @@ import {
   createProfile,
   createSkill,
   createTool,
+  deleteBeat,
+  deleteMcp,
+  deleteProfile,
+  deleteSkill,
+  deleteTool,
   disableBeat,
   enableBeat,
   getBindings,
@@ -27,6 +32,7 @@ import { errorMessage } from "@/api/client";
 import { listLlms } from "@/api/models";
 import { findApp, useSession } from "@/auth/context";
 import { BindingEditor } from "@/components/BindingEditor";
+import { ConfirmDelete } from "@/components/ConfirmDelete";
 import { parseObjectJson, prettyJson } from "@/lib/json";
 import type { BeatOut, BindingItem, LlmOut, McpOut, ProfileOut, SkillOut, ToolKind, ToolOut } from "@/types";
 
@@ -160,6 +166,14 @@ function ProfilesTab({ canControl }: { canControl: boolean }): ReactElement {
                 <Button type="link" onClick={() => setBindId(row.id)}>
                   绑定
                 </Button>
+                {canControl ? (
+                  <ConfirmDelete
+                    onConfirm={async () => {
+                      await deleteProfile(row.id);
+                      await reload();
+                    }}
+                  />
+                ) : null}
               </Space>
             ),
           },
@@ -284,6 +298,14 @@ function SkillsTab({ canControl }: { canControl: boolean }): ReactElement {
                 <Button type="link" onClick={() => setBindId(row.id)}>
                   绑定
                 </Button>
+                {canControl ? (
+                  <ConfirmDelete
+                    onConfirm={async () => {
+                      await deleteSkill(row.id);
+                      await reload();
+                    }}
+                  />
+                ) : null}
               </Space>
             ),
           },
@@ -412,6 +434,14 @@ function ToolsTab({ canControl }: { canControl: boolean }): ReactElement {
                 <Button type="link" onClick={() => setBindId(row.id)}>
                   绑定
                 </Button>
+                {canControl ? (
+                  <ConfirmDelete
+                    onConfirm={async () => {
+                      await deleteTool(row.id);
+                      await reload();
+                    }}
+                  />
+                ) : null}
               </Space>
             ),
           },
@@ -559,6 +589,14 @@ function McpTab({ canControl }: { canControl: boolean }): ReactElement {
                 <Button type="link" onClick={() => setBindId(row.id)}>
                   绑定
                 </Button>
+                {canControl ? (
+                  <ConfirmDelete
+                    onConfirm={async () => {
+                      await deleteMcp(row.id);
+                      await reload();
+                    }}
+                  />
+                ) : null}
               </Space>
             ),
           },
@@ -721,6 +759,12 @@ function BeatTab({ canControl }: { canControl: boolean }): ReactElement {
                   >
                     {row.is_enabled ? "停用" : "启用"}
                   </Button>
+                  <ConfirmDelete
+                    onConfirm={async () => {
+                      await deleteBeat(row.id);
+                      await reload();
+                    }}
+                  />
                 </Space>
               ) : null,
           },

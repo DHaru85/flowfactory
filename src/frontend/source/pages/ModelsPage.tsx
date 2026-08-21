@@ -2,7 +2,8 @@ import { Button, Form, Input, Modal, Select, Space, Switch, Table, Tag, message 
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 
 import { errorMessage } from "@/api/client";
-import { createLlm, deactivateLlm, listLlms, patchLlm } from "@/api/models";
+import { createLlm, deactivateLlm, deleteLlm, listLlms, patchLlm } from "@/api/models";
+import { ConfirmDelete } from "@/components/ConfirmDelete";
 import { findApp, useSession } from "@/auth/context";
 import { parseObjectJson, prettyJson } from "@/lib/json";
 import type { LlmOut } from "@/types";
@@ -103,6 +104,12 @@ export function ModelsPage(): ReactElement {
                       停用
                     </Button>
                   ) : null}
+                  <ConfirmDelete
+                    onConfirm={async () => {
+                      await deleteLlm(row.id);
+                      await reload();
+                    }}
+                  />
                 </Space>
               ) : null,
           },

@@ -62,3 +62,7 @@ export async function newStudioDraft(flowId: string): Promise<FlowOut> {
   const { data } = await http.post<FlowOut>(`/studio/flows/${flowId}/new-draft`);
   return data;
 }
+
+export async function deleteStudioFlow(flowId: string): Promise<void> {
+  await http.delete(`/studio/flows/${flowId}`);
+}

@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { errorMessage } from "@/api/client";
-import { createStudioFlow, listStudioFlows, listStudioProfiles, newStudioDraft } from "@/api/studio";
+import { createStudioFlow, deleteStudioFlow, listStudioFlows, listStudioProfiles, newStudioDraft } from "@/api/studio";
+import { ConfirmDelete } from "@/components/ConfirmDelete";
 import { findApp, useSession } from "@/auth/context";
 import type { FlowOut, FlowStatus, ProfileCatalogOut } from "@/types";
 
@@ -80,6 +81,14 @@ export function StudioListPage(): ReactElement {
                   >
                     新草稿
                   </Button>
+                ) : null}
+                {canControl ? (
+                  <ConfirmDelete
+                    onConfirm={async () => {
+                      await deleteStudioFlow(row.id);
+                      await reload();
+                    }}
+                  />
                 ) : null}
               </Space>
             ),
