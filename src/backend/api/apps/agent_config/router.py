@@ -215,7 +215,7 @@ async def create_profile(
     await _require_skills(session, body.skill_ids)
     repos = get_repositories(session)
     row = AgentProfile(
-        code=body.code,
+        code=await repos.agent.allocate_code("profile"),
         name=body.name,
         system_prompt=body.system_prompt,
         default_llm_id=body.default_llm_id,
@@ -357,7 +357,7 @@ async def create_skill(
     await _require_tools(session, body.tool_ids)
     repos = get_repositories(session)
     row = AgentSkill(
-        code=body.code,
+        code=await repos.agent.allocate_code("skill"),
         name=body.name,
         description=body.description,
         tool_ids=_uuid_strs(body.tool_ids),
@@ -492,7 +492,7 @@ async def create_tool(
     await _require_mcp(session, body.mcp_server_id, required=body.kind == "mcp")
     repos = get_repositories(session)
     row = AgentTool(
-        code=body.code,
+        code=await repos.agent.allocate_code("tool"),
         name=body.name,
         kind=body.kind,
         schema_=dict(body.parameter_schema),
@@ -631,7 +631,7 @@ async def create_mcp(
 ) -> McpOut:
     repos = get_repositories(session)
     row = AgentMcpServer(
-        code=body.code,
+        code=await repos.agent.allocate_code("mcp"),
         name=body.name,
         transport=body.transport,
         config=dict(body.config),
@@ -774,7 +774,7 @@ async def create_beat(
         await _require_profile(session, body.profile_id)
     repos = get_repositories(session)
     row = AgentBeatTask(
-        code=body.code,
+        code=await repos.agent.allocate_code("beat"),
         flow_id=body.flow_id,
         profile_id=body.profile_id,
         cron=body.cron,

@@ -9,7 +9,6 @@ import { parseObjectJson, prettyJson } from "@/lib/json";
 import type { LlmOut } from "@/types";
 
 interface LlmFormValues {
-  code: string;
   provider: string;
   model_name: string;
   configText: string;
@@ -48,7 +47,6 @@ export function ModelsPage(): ReactElement {
   const openEdit = (row: LlmOut): void => {
     setEditing(row);
     form.setFieldsValue({
-      code: row.code,
       provider: row.provider,
       model_name: row.model_name,
       is_active: row.is_active,
@@ -71,7 +69,6 @@ export function ModelsPage(): ReactElement {
         rowKey="id"
         dataSource={rows}
         columns={[
-          { title: "code", dataIndex: "code" },
           { title: "provider", dataIndex: "provider" },
           { title: "model", dataIndex: "model_name" },
           {
@@ -143,7 +140,6 @@ export function ModelsPage(): ReactElement {
                 await patchLlm(editing.id, patch);
               } else {
                 await createLlm({
-                  code: values.code,
                   provider: values.provider,
                   model_name: values.model_name,
                   config,
@@ -159,9 +155,6 @@ export function ModelsPage(): ReactElement {
         }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="code" label="code" rules={[{ required: true }]}>
-            <Input disabled={editing !== null} />
-          </Form.Item>
           <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
             <Select
               options={[

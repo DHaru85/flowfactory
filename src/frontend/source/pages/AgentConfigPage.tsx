@@ -101,7 +101,6 @@ function ProfilesTab({ canControl }: { canControl: boolean }): ReactElement {
   const [editing, setEditing] = useState<ProfileOut | null>(null);
   const [bindId, setBindId] = useState<string | null>(null);
   const [form] = Form.useForm<{
-    code: string;
     name: string;
     system_prompt: string;
     default_llm_id: string | null;
@@ -139,8 +138,7 @@ function ProfilesTab({ canControl }: { canControl: boolean }): ReactElement {
         rowKey="id"
         dataSource={rows}
         columns={[
-          { title: "code", dataIndex: "code" },
-          { title: "name", dataIndex: "name" },
+          { title: "名称", dataIndex: "name" },
           {
             title: "操作",
             render: (_: unknown, row: ProfileOut) => (
@@ -151,7 +149,6 @@ function ProfilesTab({ canControl }: { canControl: boolean }): ReactElement {
                     onClick={() => {
                       setEditing(row);
                       form.setFieldsValue({
-                        code: row.code,
                         name: row.name,
                         system_prompt: row.system_prompt,
                         default_llm_id: row.default_llm_id,
@@ -205,9 +202,6 @@ function ProfilesTab({ canControl }: { canControl: boolean }): ReactElement {
         }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="code" label="code" rules={[{ required: true }]}>
-            <Input disabled={editing !== null} />
-          </Form.Item>
           <Form.Item name="name" label="name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
@@ -215,10 +209,10 @@ function ProfilesTab({ canControl }: { canControl: boolean }): ReactElement {
             <Input.TextArea rows={4} />
           </Form.Item>
           <Form.Item name="default_llm_id" label="默认 LLM">
-            <Select allowClear options={llms.map((item) => ({ value: item.id, label: item.code }))} />
+            <Select allowClear options={llms.map((item) => ({ value: item.id, label: item.model_name }))} />
           </Form.Item>
           <Form.Item name="skill_ids" label="技能">
-            <Select mode="multiple" options={skills.map((item) => ({ value: item.id, label: item.code }))} />
+            <Select mode="multiple" options={skills.map((item) => ({ value: item.id, label: item.name }))} />
           </Form.Item>
         </Form>
       </Modal>
@@ -240,7 +234,6 @@ function SkillsTab({ canControl }: { canControl: boolean }): ReactElement {
   const [editing, setEditing] = useState<SkillOut | null>(null);
   const [bindId, setBindId] = useState<string | null>(null);
   const [form] = Form.useForm<{
-    code: string;
     name: string;
     description: string | null;
     tool_ids: string[];
@@ -277,8 +270,7 @@ function SkillsTab({ canControl }: { canControl: boolean }): ReactElement {
         rowKey="id"
         dataSource={rows}
         columns={[
-          { title: "code", dataIndex: "code" },
-          { title: "name", dataIndex: "name" },
+          { title: "名称", dataIndex: "name" },
           {
             title: "操作",
             render: (_: unknown, row: SkillOut) => (
@@ -332,9 +324,6 @@ function SkillsTab({ canControl }: { canControl: boolean }): ReactElement {
         }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="code" label="code" rules={[{ required: true }]}>
-            <Input disabled={editing !== null} />
-          </Form.Item>
           <Form.Item name="name" label="name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
@@ -345,7 +334,7 @@ function SkillsTab({ canControl }: { canControl: boolean }): ReactElement {
             <Input.TextArea />
           </Form.Item>
           <Form.Item name="tool_ids" label="工具">
-            <Select mode="multiple" options={tools.map((item) => ({ value: item.id, label: item.code }))} />
+            <Select mode="multiple" options={tools.map((item) => ({ value: item.id, label: item.name }))} />
           </Form.Item>
         </Form>
       </Modal>
@@ -367,7 +356,6 @@ function ToolsTab({ canControl }: { canControl: boolean }): ReactElement {
   const [editing, setEditing] = useState<ToolOut | null>(null);
   const [bindId, setBindId] = useState<string | null>(null);
   const [form] = Form.useForm<{
-    code: string;
     name: string;
     kind: ToolKind;
     schemaText: string;
@@ -405,8 +393,7 @@ function ToolsTab({ canControl }: { canControl: boolean }): ReactElement {
         rowKey="id"
         dataSource={rows}
         columns={[
-          { title: "code", dataIndex: "code" },
-          { title: "name", dataIndex: "name" },
+          { title: "名称", dataIndex: "name" },
           { title: "kind", dataIndex: "kind" },
           {
             title: "操作",
@@ -418,7 +405,6 @@ function ToolsTab({ canControl }: { canControl: boolean }): ReactElement {
                     onClick={() => {
                       setEditing(row);
                       form.setFieldsValue({
-                        code: row.code,
                         name: row.name,
                         kind: row.kind,
                         schemaText: prettyJson(row.schema ?? {}),
@@ -466,7 +452,6 @@ function ToolsTab({ canControl }: { canControl: boolean }): ReactElement {
                 });
               } else {
                 await createTool({
-                  code: values.code,
                   name: values.name,
                   kind: values.kind,
                   schema,
@@ -483,9 +468,6 @@ function ToolsTab({ canControl }: { canControl: boolean }): ReactElement {
         }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="code" label="code" rules={[{ required: true }]}>
-            <Input disabled={editing !== null} />
-          </Form.Item>
           <Form.Item name="name" label="name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
@@ -505,7 +487,7 @@ function ToolsTab({ canControl }: { canControl: boolean }): ReactElement {
             <Input.TextArea rows={4} />
           </Form.Item>
           <Form.Item name="mcp_server_id" label="MCP Server">
-            <Select allowClear options={mcps.map((item) => ({ value: item.id, label: item.code }))} />
+            <Select allowClear options={mcps.map((item) => ({ value: item.id, label: item.name }))} />
           </Form.Item>
         </Form>
       </Modal>
@@ -526,7 +508,6 @@ function McpTab({ canControl }: { canControl: boolean }): ReactElement {
   const [editing, setEditing] = useState<McpOut | null>(null);
   const [bindId, setBindId] = useState<string | null>(null);
   const [form] = Form.useForm<{
-    code: string;
     name: string;
     transport: "stdio" | "sse";
     configText: string;
@@ -561,8 +542,7 @@ function McpTab({ canControl }: { canControl: boolean }): ReactElement {
         rowKey="id"
         dataSource={rows}
         columns={[
-          { title: "code", dataIndex: "code" },
-          { title: "name", dataIndex: "name" },
+          { title: "名称", dataIndex: "name" },
           { title: "transport", dataIndex: "transport" },
           {
             title: "操作",
@@ -574,7 +554,6 @@ function McpTab({ canControl }: { canControl: boolean }): ReactElement {
                     onClick={() => {
                       setEditing(row);
                       form.setFieldsValue({
-                        code: row.code,
                         name: row.name,
                         transport: row.transport,
                         configText: prettyJson(row.config),
@@ -619,7 +598,6 @@ function McpTab({ canControl }: { canControl: boolean }): ReactElement {
                 });
               } else {
                 await createMcp({
-                  code: values.code,
                   name: values.name,
                   transport: values.transport,
                   config,
@@ -635,9 +613,6 @@ function McpTab({ canControl }: { canControl: boolean }): ReactElement {
         }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="code" label="code" rules={[{ required: true }]}>
-            <Input disabled={editing !== null} />
-          </Form.Item>
           <Form.Item name="name" label="name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
@@ -674,7 +649,6 @@ function BeatTab({ canControl }: { canControl: boolean }): ReactElement {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BeatOut | null>(null);
   const [form] = Form.useForm<{
-    code: string;
     mode: "workflow" | "planner";
     flow_id: string | null;
     profile_id: string | null;
@@ -718,12 +692,13 @@ function BeatTab({ canControl }: { canControl: boolean }): ReactElement {
         rowKey="id"
         dataSource={rows}
         columns={[
-          { title: "code", dataIndex: "code" },
           { title: "cron", dataIndex: "cron" },
           {
             title: "目标",
             render: (_: unknown, row: BeatOut) =>
-              row.profile_id ? `profile ${row.profile_id}` : `flow ${row.flow_id ?? ""}`,
+              row.profile_id
+                ? (profiles.find((item) => item.id === row.profile_id)?.name ?? "规划")
+                : "工作流",
           },
           { title: "启用", dataIndex: "is_enabled", render: (v: boolean) => (v ? "是" : "否") },
           {
@@ -736,7 +711,6 @@ function BeatTab({ canControl }: { canControl: boolean }): ReactElement {
                     onClick={() => {
                       setEditing(row);
                       form.setFieldsValue({
-                        code: row.code,
                         mode: row.profile_id ? "planner" : "workflow",
                         flow_id: row.flow_id,
                         profile_id: row.profile_id,
@@ -782,7 +756,6 @@ function BeatTab({ canControl }: { canControl: boolean }): ReactElement {
                 await patchBeat(editing.id, { cron: values.cron, input_payload });
               } else {
                 await createBeat({
-                  code: values.code,
                   flow_id: values.mode === "workflow" ? values.flow_id : null,
                   profile_id: values.mode === "planner" ? values.profile_id : null,
                   cron: values.cron,
@@ -799,9 +772,6 @@ function BeatTab({ canControl }: { canControl: boolean }): ReactElement {
         }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="code" label="code" rules={[{ required: true }]}>
-            <Input disabled={editing !== null} />
-          </Form.Item>
           <Form.Item name="mode" label="类型">
             <Radio.Group disabled={editing !== null}>
               <Radio.Button value="planner">规划</Radio.Button>
@@ -814,7 +784,7 @@ function BeatTab({ canControl }: { canControl: boolean }): ReactElement {
                 <Form.Item name="profile_id" label="Profile" rules={[{ required: editing === null }]}>
                   <Select
                     disabled={editing !== null}
-                    options={profiles.map((item) => ({ value: item.id, label: item.code }))}
+                    options={profiles.map((item) => ({ value: item.id, label: item.name }))}
                   />
                 </Form.Item>
               ) : (

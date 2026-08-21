@@ -126,7 +126,6 @@ async def test_studio_flow_lifecycle(api_client: AsyncClient) -> None:
         "/api/v1/studio/flows",
         headers=headers,
         json={
-            "code": f"wf-{uuid4().hex[:8]}",
             "name": "demo",
             "profile_id": str(profile.id),
         },
@@ -179,7 +178,8 @@ async def test_studio_flow_lifecycle(api_client: AsyncClient) -> None:
 
     codes = await api_client.get("/api/v1/studio/flows/published-codes", headers=headers)
     assert codes.status_code == 200
-    assert any(item["code"] == body["code"] for item in codes.json())
+    assert any(item["code"] == created.json()["code"] for item in codes.json())
+    assert any(item["name"] == "demo2" for item in codes.json())
 
     profiles = await api_client.get("/api/v1/studio/profiles", headers=headers)
     assert profiles.status_code == 200

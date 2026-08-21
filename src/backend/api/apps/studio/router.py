@@ -178,7 +178,10 @@ async def list_published_codes(
 ) -> list[PublishedFlowCodeOut]:
     repos = get_repositories(session)
     pairs = await repos.agent.list_published_flow_summaries()
-    return [PublishedFlowCodeOut(code=code, version=version) for code, version in pairs]
+    return [
+        PublishedFlowCodeOut(code=code, version=version, name=name)
+        for code, version, name in pairs
+    ]
 
 
 @router.get("/flows", response_model=list[FlowOut])
@@ -209,7 +212,7 @@ async def create_flow(
     )
     repos = get_repositories(session)
     flow = AgentFlow(
-        code=body.code,
+        code=await repos.agent.allocate_code("flow"),
         name=body.name,
         version=1,
         profile_id=body.profile_id,

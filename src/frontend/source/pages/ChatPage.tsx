@@ -44,7 +44,7 @@ export function ChatPage({ scene }: Props): ReactElement {
   const [messages, setMessages] = useState<MessageOut[]>([]);
   const [streamText, setStreamText] = useState<Record<string, string>>({});
   const [input, setInput] = useState("");
-  const [profiles, setProfiles] = useState<{ id: string; code: string }[]>([]);
+  const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [flowId, setFlowId] = useState<string | null>(null);
   const [flowOptions, setFlowOptions] = useState<{ id: string; label: string }[]>([]);
@@ -83,7 +83,7 @@ export function ChatPage({ scene }: Props): ReactElement {
         canAgentConfig ? listProfiles() : canStudio ? listStudioProfiles() : Promise.resolve([]);
       void load
         .then((rows) => {
-          setProfiles(rows.map((row) => ({ id: row.id, code: row.code })));
+          setProfiles(rows.map((row) => ({ id: row.id, name: row.name })));
           setProfileId((cur) => cur ?? rows[0]?.id ?? null);
         })
         .catch((err: unknown) => message.error(errorMessage(err, "加载 Profile 失败")));
@@ -91,7 +91,7 @@ export function ChatPage({ scene }: Props): ReactElement {
     if (scene === "workflow" && canStudio) {
       void listStudioFlows("published")
         .then((rows) => {
-          setFlowOptions(rows.map((row) => ({ id: row.id, label: `${row.code}@${row.version}` })));
+          setFlowOptions(rows.map((row) => ({ id: row.id, label: `${row.name} v${row.version}` })));
           setFlowId((cur) => cur ?? rows[0]?.id ?? null);
         })
         .catch(() => undefined);
@@ -241,7 +241,7 @@ export function ChatPage({ scene }: Props): ReactElement {
             placeholder="Profile"
             value={profileId}
             onChange={setProfileId}
-            options={profiles.map((item) => ({ value: item.id, label: item.code }))}
+            options={profiles.map((item) => ({ value: item.id, label: item.name }))}
           />
         ) : canStudio && flowOptions.length > 0 ? (
           <Select

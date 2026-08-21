@@ -25,7 +25,6 @@ class BindingPutBody(BaseModel):
 
 
 class ProfileCreateBody(BaseModel):
-    code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     system_prompt: str
     default_llm_id: UUID | None = None
@@ -49,7 +48,6 @@ class ProfileOut(BaseModel):
 
 
 class SkillCreateBody(BaseModel):
-    code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     description: str | None = None
     tool_ids: list[UUID] = Field(default_factory=list)
@@ -75,7 +73,6 @@ class SkillOut(BaseModel):
 class ToolCreateBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     kind: ToolKind
     parameter_schema: dict[str, object] = Field(alias="schema")
@@ -106,7 +103,6 @@ class ToolOut(BaseModel):
 
 
 class McpCreateBody(BaseModel):
-    code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     transport: McpTransport
     config: dict[str, object]
@@ -130,7 +126,6 @@ class McpOut(BaseModel):
 
 
 class BeatCreateBody(BaseModel):
-    code: str = Field(min_length=1, max_length=64)
     flow_id: UUID | None = None
     profile_id: UUID | None = None
     cron: str = Field(min_length=1, max_length=64)

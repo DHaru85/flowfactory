@@ -109,7 +109,7 @@ async def test_app_use_and_control_two_tiers(api_client: AsyncClient) -> None:
     created = await api_client.post(
         "/api/v1/models/llms",
         headers=user_h,
-        json={"code": f"l-{uuid4().hex[:8]}", "provider": "local", "model_name": "m"},
+        json={"provider": "local", "model_name": "m"},
     )
     assert created.status_code == 403
 
@@ -130,7 +130,7 @@ async def test_app_use_and_control_two_tiers(api_client: AsyncClient) -> None:
     created_ok = await api_client.post(
         "/api/v1/models/llms",
         headers=user_h,
-        json={"code": f"l-{uuid4().hex[:8]}", "provider": "local", "model_name": "m"},
+        json={"provider": "local", "model_name": "m"},
     )
     assert created_ok.status_code == 200
 
@@ -169,7 +169,6 @@ async def test_profile_binding_visibility_and_404(api_client: AsyncClient) -> No
         "/api/v1/agent-config/profiles",
         headers=admin_h,
         json={
-            "code": f"p-{uuid4().hex[:8]}",
             "name": "p",
             "system_prompt": "s",
         },

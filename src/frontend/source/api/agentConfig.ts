@@ -17,7 +17,6 @@ export async function listProfiles(): Promise<ProfileOut[]> {
 }
 
 export async function createProfile(body: {
-  code: string;
   name: string;
   system_prompt: string;
   default_llm_id: string | null;
@@ -41,7 +40,6 @@ export async function listSkills(): Promise<SkillOut[]> {
 }
 
 export async function createSkill(body: {
-  code: string;
   name: string;
   description: string | null;
   tool_ids: string[];
@@ -65,7 +63,6 @@ export async function listTools(): Promise<ToolOut[]> {
 }
 
 export async function createTool(body: {
-  code: string;
   name: string;
   kind: ToolKind;
   schema: Record<string, unknown>;
@@ -96,7 +93,6 @@ export async function listMcps(): Promise<McpOut[]> {
 }
 
 export async function createMcp(body: {
-  code: string;
   name: string;
   transport: McpTransport;
   config: Record<string, unknown>;
@@ -120,7 +116,6 @@ export async function listBeats(): Promise<BeatOut[]> {
 }
 
 export async function createBeat(body: {
-  code: string;
   flow_id: string | null;
   profile_id: string | null;
   cron: string;

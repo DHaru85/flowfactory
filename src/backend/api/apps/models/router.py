@@ -78,7 +78,7 @@ async def create_llm(
     _require_config_base_url(dict(body.config))
     repos = get_repositories(session)
     row = AgentLlm(
-        code=body.code,
+        code=await repos.agent.allocate_code("llm"),
         provider=body.provider,
         model_name=body.model_name,
         config=dict(body.config),

@@ -75,7 +75,6 @@ export interface LlmOut {
 }
 
 export interface LlmCreateBody {
-  code: string;
   provider: string;
   model_name: string;
   config: Record<string, unknown>;
@@ -207,6 +206,7 @@ export interface HitlResumeOut {
 export interface PublishedFlowCodeOut {
   code: string;
   version: number;
+  name: string;
 }
 
 export type FlowStatus = "draft" | "published" | "archived";
@@ -301,7 +301,6 @@ export interface FlowOut {
 }
 
 export interface FlowCreateBody {
-  code: string;
   name: string;
   profile_id: string;
   definition?: FlowDefinitionV1 | null;

@@ -17,7 +17,7 @@ export function StudioListPage(): ReactElement {
   const [profiles, setProfiles] = useState<ProfileCatalogOut[]>([]);
   const [status, setStatus] = useState<FlowStatus | "all">("all");
   const [open, setOpen] = useState(false);
-  const [form] = Form.useForm<{ code: string; name: string; profile_id: string }>();
+  const [form] = Form.useForm<{ name: string; profile_id: string }>();
 
   const reload = useCallback(async () => {
     setRows(await listStudioFlows(status === "all" ? undefined : status));
@@ -57,8 +57,7 @@ export function StudioListPage(): ReactElement {
         rowKey="id"
         dataSource={rows}
         columns={[
-          { title: "code", dataIndex: "code" },
-          { title: "name", dataIndex: "name" },
+          { title: "名称", dataIndex: "name" },
           { title: "version", dataIndex: "version", width: 90 },
           {
             title: "状态",
@@ -102,7 +101,6 @@ export function StudioListPage(): ReactElement {
         onOk={() => {
           void form.validateFields().then(async (values) => {
             const created = await createStudioFlow({
-              code: values.code,
               name: values.name,
               profile_id: values.profile_id,
               definition: null,
@@ -117,9 +115,6 @@ export function StudioListPage(): ReactElement {
         }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="code" label="code" rules={[{ required: true, message: "必填" }]}>
-            <Input />
-          </Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "必填" }]}>
             <Input />
           </Form.Item>
@@ -127,7 +122,7 @@ export function StudioListPage(): ReactElement {
             <Select
               options={profiles.map((item) => ({
                 value: item.id,
-                label: `${item.code} ${item.name}`,
+                label: item.name,
               }))}
               showSearch
               optionFilterProp="label"

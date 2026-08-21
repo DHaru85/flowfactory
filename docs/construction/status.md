@@ -13,7 +13,7 @@
 | 映射层 / data_schema（Observability） | 空闲 | ORM + Collector flush 仓储查询 |
 | 映射层 / data_schema（Notification） | 空闲 | ORM + 仓储已落地 |
 | 数据层 / service/database | 空闲 | 异步引擎改为线程局部，适配 Celery prefork/eager |
-| 数据层 / service/persistence | 空闲 | Profile 硬删：软删会话/Flow 不计入引用 |
+| 数据层 / service/persistence | 空闲 | Agent 族 code 服务层生成 |
 | 数据层 / service/cache | 空闲 | Redis 仅热状态；SSE 帧不走 Redis |
 | 数据层 / settings | 空闲 | 默认 rabbitmq_url；stream 连接超时与投递超时分离 |
 | 服务层 / service/runtime | 空闲 | SSE 思考增量：stream_parts；落库 reasoning 块 |
@@ -26,13 +26,15 @@
 | 服务层 / service/auth | 空闲 | AccessControl；本地自助注册 |
 | 服务层 / service/tools | 空闲 | ToolExecutor；SkillRuntime |
 | docs/design（服务说明文档） | 空闲 | 流式总线默认接现网 RabbitMQ |
-| 表示层 / frontend | 空闲 | 各应用删除确认；auth 用户停用 |
-| 应用层 / api | 空闲 | DELETE Profile 忽略软删会话引用 |
+| 表示层 / frontend | 空闲 | Agent 族隐藏 code |
+| 应用层 / api | 空闲 | 创建不再接收 code |
 | 服务层 / service/guardrail | 空闲 | GuardrailEvaluator / PolicyDetector 预留 |
 
 未列出的模块视为 **空闲**。
 
 ## 施工简报
+
+- 2026-08-21 Agent 族 code：创建由服务层生成 `{kind}-{8hex}`，HTTP 创建体不再收 code；PATCH 本就不能改。表示层去掉 code 输入与列，下拉/面包屑用 name。图节点仍写内部指针。pytest 19 passed；ruff 通过；`npm run build` 通过。需重启 uvicorn 并刷新前端。
 
 - 2026-08-21 Profile 硬删：未删除规划会话仍 409；仅软删会话不拦截。已软删 Flow 不计入引用，硬删前卸掉其外键行。pytest `test_api_conversation` 等 9 passed；ruff 通过。需重启 uvicorn。
 

@@ -70,21 +70,20 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         json={"username": user.username, "password": "pw-ok"},
     )
     headers = _auth(login.json()["access_token"])
-    suffix = uuid4().hex[:8]
 
     llm = await api_client.post(
         "/api/v1/models/llms",
         headers=headers,
-        json={"code": f"l-{suffix}", "provider": "local", "model_name": "m"},
+        json={"provider": "local", "model_name": "m"},
     )
     assert llm.status_code == 200
+    assert str(llm.json()["code"]).startswith("llm-")
     llm_id = llm.json()["id"]
 
     mcp = await api_client.post(
         "/api/v1/agent-config/mcp-servers",
         headers=headers,
         json={
-            "code": f"mcp-{suffix}",
             "name": "mcp",
             "transport": "sse",
             "config": {"url": "http://mcp"},
@@ -97,7 +96,6 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         "/api/v1/agent-config/tools",
         headers=headers,
         json={
-            "code": f"t-{suffix}",
             "name": "tool",
             "kind": "mcp",
             "schema": {"type": "object"},
@@ -111,7 +109,6 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         "/api/v1/agent-config/skills",
         headers=headers,
         json={
-            "code": f"s-{suffix}",
             "name": "skill",
             "tool_ids": [tool_id],
             "prompt_template": "do",
@@ -124,7 +121,6 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         "/api/v1/agent-config/profiles",
         headers=headers,
         json={
-            "code": f"p-{suffix}",
             "name": "prof",
             "system_prompt": "sys",
             "default_llm_id": llm_id,
@@ -132,6 +128,7 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         },
     )
     assert profile.status_code == 200
+    assert str(profile.json()["code"]).startswith("profile-")
     profile_id = profile.json()["id"]
 
     bound = await api_client.put(
@@ -161,7 +158,6 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         "/api/v1/studio/flows",
         headers=headers,
         json={
-            "code": f"wf-{suffix}",
             "name": "wf",
             "profile_id": profile_id,
             "definition": empty_flow_definition().model_dump(mode="json"),
@@ -173,7 +169,7 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
     missing = await api_client.post(
         "/api/v1/agent-config/beat-tasks",
         headers=headers,
-        json={"code": f"b-miss-{suffix}", "cron": "* * * * *"},
+        json={"cron": "* * * * *"},
     )
     assert missing.status_code == 400
     assert missing.json()["code"] == "beat_target_required"
@@ -182,7 +178,6 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         "/api/v1/agent-config/beat-tasks",
         headers=headers,
         json={
-            "code": f"b-bad-{suffix}",
             "flow_id": str(uuid4()),
             "cron": "* * * * *",
         },
@@ -194,7 +189,6 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         "/api/v1/agent-config/beat-tasks",
         headers=headers,
         json={
-            "code": f"b-{suffix}",
             "flow_id": flow_id,
             "cron": "*/5 * * * *",
         },
@@ -207,7 +201,6 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         "/api/v1/agent-config/beat-tasks",
         headers=headers,
         json={
-            "code": f"b-both-{suffix}",
             "flow_id": flow_id,
             "profile_id": profile_id,
             "cron": "* * * * *",
@@ -220,7 +213,6 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         "/api/v1/agent-config/beat-tasks",
         headers=headers,
         json={
-            "code": f"b-pl-{suffix}",
             "profile_id": profile_id,
             "cron": "*/10 * * * *",
             "input_payload": {"input": "定时规划"},
@@ -250,7 +242,7 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
     extra = await api_client.post(
         "/api/v1/agent-config/skills",
         headers=headers,
-        json={"code": f"s-x-{suffix}", "name": "extra", "tool_ids": [], "prompt_template": None},
+        json={"name": "extra", "tool_ids": [], "prompt_template": None},
     )
     assert extra.status_code == 200
     extra_id = extra.json()["id"]

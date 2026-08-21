@@ -55,18 +55,16 @@ async def _login(client: AsyncClient, user: User) -> dict[str, str]:
 
 
 async def _create_profile(client: AsyncClient, headers: dict[str, str]) -> str:
-    suffix = uuid4().hex[:8]
     llm = await client.post(
         "/api/v1/models/llms",
         headers=headers,
-        json={"code": f"cv-llm-{suffix}", "provider": "local", "model_name": "m"},
+        json={"provider": "local", "model_name": "m"},
     )
     assert llm.status_code == 200
     profile = await client.post(
         "/api/v1/agent-config/profiles",
         headers=headers,
         json={
-            "code": f"cv-pf-{suffix}",
             "name": "p",
             "system_prompt": "s",
             "default_llm_id": llm.json()["id"],

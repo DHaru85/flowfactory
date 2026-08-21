@@ -216,7 +216,7 @@ function NodeForm({
             <Select
               options={llms.map((item) => ({
                 value: item.code,
-                label: `${item.code} (${item.model_name})`,
+                label: `${item.model_name} (${item.provider})`,
               }))}
               showSearch
             />
@@ -233,7 +233,7 @@ function NodeForm({
         <>
           <Form.Item name="tool_code" label="工具" rules={[{ required: true }]}>
             <Select
-              options={tools.map((item) => ({ value: item.code, label: `${item.code} ${item.name}` }))}
+              options={tools.map((item) => ({ value: item.code, label: item.name }))}
               showSearch
             />
           </Form.Item>
@@ -265,11 +265,11 @@ function NodeForm({
       ) : null}
       {node.type === "subgraph" ? (
         <>
-          <Form.Item name="flow_code" label="子图 code" rules={[{ required: true }]}>
+          <Form.Item name="flow_code" label="子图" rules={[{ required: true }]}>
             <Select
               options={publishedCodes.map((item) => ({
                 value: item.code,
-                label: `${item.code}@${item.version}`,
+                label: `${item.name} v${item.version}`,
               }))}
               showSearch
             />

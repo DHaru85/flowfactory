@@ -11,7 +11,6 @@ from service.runtime.definition_v1 import FlowDefinitionV1
 
 
 class FlowCreateBody(BaseModel):
-    code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     profile_id: UUID
     definition: dict[str, object] | None = None
@@ -37,6 +36,7 @@ class FlowOut(BaseModel):
 class PublishedFlowCodeOut(BaseModel):
     code: str
     version: int
+    name: str
 
 
 class ProfileCatalogOut(BaseModel):

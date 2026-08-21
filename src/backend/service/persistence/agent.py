@@ -17,6 +17,7 @@ from data_schema.agent.models import (
     AgentSkill,
     AgentTool,
 )
+from service.agent_code import AgentCodeKind, generate_agent_code
 from service.persistence.base import Repository
 
 
@@ -91,6 +92,41 @@ class AgentConfigRepository:
     async def get_skill_by_code(self, code: str) -> AgentSkill | None:
         stmt = select(AgentSkill).where(AgentSkill.code == code)
         return await self._session.scalar(stmt)
+
+    async def get_mcp_by_code(self, code: str) -> AgentMcpServer | None:
+        stmt = select(AgentMcpServer).where(AgentMcpServer.code == code)
+        return await self._session.scalar(stmt)
+
+    async def get_beat_by_code(self, code: str) -> AgentBeatTask | None:
+        stmt = select(AgentBeatTask).where(AgentBeatTask.code == code)
+        return await self._session.scalar(stmt)
+
+    async def flow_code_taken(self, code: str) -> bool:
+        stmt = select(AgentFlow.id).where(AgentFlow.code == code).limit(1)
+        return await self._session.scalar(stmt) is not None
+
+    async def allocate_code(self, kind: AgentCodeKind) -> str:
+        for _ in range(16):
+            code = generate_agent_code(kind)
+            taken = False
+            if kind == "llm":
+                taken = await self.get_llm_by_code(code) is not None
+            elif kind == "profile":
+                taken = await self.get_profile_by_code(code) is not None
+            elif kind == "skill":
+                taken = await self.get_skill_by_code(code) is not None
+            elif kind == "tool":
+                taken = await self.get_tool_by_code(code) is not None
+            elif kind == "mcp":
+                taken = await self.get_mcp_by_code(code) is not None
+            elif kind == "flow":
+                taken = await self.flow_code_taken(code)
+            elif kind == "beat":
+                taken = await self.get_beat_by_code(code) is not None
+            if not taken:
+                return code
+        raise RuntimeError(f"无法分配唯一 {kind} code")
+
 
     async def list_bindings(
         self,
@@ -187,19 +223,19 @@ class AgentConfigRepository:
         result = await self._session.scalars(stmt)
         return list(result.all())
 
-    async def list_published_flow_summaries(self) -> list[tuple[str, int]]:
-        """每个 code 取已发布的最大 version。"""
+    async def list_published_flow_summaries(self) -> list[tuple[str, int, str]]:
+        """每个 code 取已发布的最大 version 及其名称。"""
         stmt = (
-            select(AgentFlow.code, AgentFlow.version)
+            select(AgentFlow.code, AgentFlow.version, AgentFlow.name)
             .where(AgentFlow.status == "published")
             .order_by(AgentFlow.code, AgentFlow.version.desc())
         )
         rows = (await self._session.execute(stmt)).all()
-        latest: dict[str, int] = {}
-        for code, version in rows:
+        latest: dict[str, tuple[int, str]] = {}
+        for code, version, name in rows:
             if code not in latest:
-                latest[code] = int(version)
-        return [(code, ver) for code, ver in latest.items()]
+                latest[code] = (int(version), str(name))
+        return [(code, ver, name) for code, (ver, name) in latest.items()]
 
     async def archive_published_siblings(self, code: str, except_id: uuid.UUID) -> None:
         stmt = select(AgentFlow).where(

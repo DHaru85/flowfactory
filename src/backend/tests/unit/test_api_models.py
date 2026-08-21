@@ -103,12 +103,10 @@ async def test_models_llm_secret_not_returned(api_client: AsyncClient) -> None:
         json={"username": user.username, "password": "pw-ok"},
     )
     headers = _auth(login.json()["access_token"])
-    code = f"llm-{uuid4().hex[:8]}"
     created = await api_client.post(
         "/api/v1/models/llms",
         headers=headers,
         json={
-            "code": code,
             "provider": "local",
             "model_name": "demo",
             "config": {"base_url": "http://llm", "api_key": "super-secret"},
@@ -116,6 +114,8 @@ async def test_models_llm_secret_not_returned(api_client: AsyncClient) -> None:
     )
     assert created.status_code == 200
     body = created.json()
+    code = body["code"]
+    assert str(code).startswith("llm-")
     assert body["has_api_key"] is True
     assert "api_key" not in body["config"]
     assert body["config"]["base_url"] == "http://llm"
@@ -130,9 +130,13 @@ async def test_models_llm_secret_not_returned(api_client: AsyncClient) -> None:
     assert patched.json()["has_api_key"] is True
     assert patched.json()["config"]["base_url"] == "http://llm2"
 
-    studio = await api_client.get("/api/v1/studio/llms", headers=headers)
+    studio = await api_client.get(
+        "/api/v1/studio/llms",
+        headers=headers,
+        params={"limit": 100},
+    )
     assert studio.status_code == 200
-    assert any(item["code"] == code for item in studio.json())
+    assert any(item["id"] == llm_id for item in studio.json())
 
     off = await api_client.post(f"/api/v1/models/llms/{llm_id}/deactivate", headers=headers)
     assert off.status_code == 200
@@ -157,7 +161,6 @@ async def test_create_llm_rejects_bad_base_url(api_client: AsyncClient) -> None:
         "/api/v1/models/llms",
         headers=headers,
         json={
-            "code": f"llm-{uuid4().hex[:8]}",
             "provider": "local",
             "model_name": "demo",
             "config": {"base_url": "htttp://192.168.129.50:8122/v1"},

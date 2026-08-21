@@ -63,6 +63,7 @@ const DRILL_MAX_DEPTH = 8;
 interface DrillFrame {
   flowId: string;
   code: string;
+  name: string;
   version: number;
   document: FlowDefinitionV1;
 }
@@ -229,7 +230,7 @@ function StudioCanvasInner(): ReactElement {
     const full = await getStudioFlow(target.id);
     setStack((prev) => [
       ...prev,
-      { flowId: full.id, code: full.code, version: full.version, document: full.definition },
+      { flowId: full.id, code: full.code, name: full.name, version: full.version, document: full.definition },
     ]);
     setSelection(null);
   };
@@ -413,7 +414,7 @@ function StudioCanvasInner(): ReactElement {
       >
         <Link to="/studio">返回列表</Link>
         <Button type="link" onClick={() => { setStack([]); setSelection(null); }}>
-          {flow.code}@{flow.version}
+          {flow.name} v{flow.version}
         </Button>
         {stack.map((frame, idx) => (
           <Button
@@ -424,7 +425,7 @@ function StudioCanvasInner(): ReactElement {
               setSelection(null);
             }}
           >
-            / {frame.code}@{frame.version}
+            / {frame.name} v{frame.version}
           </Button>
         ))}
         <Typography.Text>
@@ -448,7 +449,7 @@ function StudioCanvasInner(): ReactElement {
           }}
           disabled={readOnly}
           style={{ width: 240 }}
-          options={profiles.map((item) => ({ value: item.id, label: `${item.code} ${item.name}` }))}
+          options={profiles.map((item) => ({ value: item.id, label: item.name }))}
         />
         <Space>
           {canControl && flow.status === "draft" ? (

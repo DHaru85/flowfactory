@@ -23,7 +23,6 @@ def redact_llm_config(config: dict[str, object]) -> tuple[dict[str, object], boo
 
 
 class LlmCreateBody(BaseModel):
-    code: str = Field(min_length=1, max_length=64)
     provider: str = Field(min_length=1, max_length=32)
     model_name: str = Field(min_length=1, max_length=128)
     config: dict[str, object] = Field(default_factory=dict)
