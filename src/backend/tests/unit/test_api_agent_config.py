@@ -159,7 +159,6 @@ async def test_agent_config_crud_bindings_beat_and_asset(api_client: AsyncClient
         headers=headers,
         json={
             "name": "wf",
-            "profile_id": profile_id,
             "definition": empty_flow_definition().model_dump(mode="json"),
         },
     )

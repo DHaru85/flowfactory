@@ -61,7 +61,6 @@ def _try_out(row: AgentFlow) -> FlowOut | None:
         code=row.code,
         name=row.name,
         version=row.version,
-        profile_id=row.profile_id,
         status=row.status,
         published_at=row.published_at,
         definition=_parse_definition(raw),
@@ -85,13 +84,6 @@ async def _get_flow(session: AsyncSession, flow_id: UUID) -> AgentFlow:
     if flow is None or flow.status == "deleted":
         raise http_error(404, "flow_not_found", "工作流不存在")
     return flow
-
-
-async def _require_profile(session: AsyncSession, profile_id: UUID) -> None:
-    repos = get_repositories(session)
-    profile = await repos.agent.profile.get(profile_id)
-    if profile is None:
-        raise http_error(400, "profile_not_found", "Profile 不存在")
 
 
 async def _assert_subgraph_refs_and_no_cycle(
@@ -204,7 +196,6 @@ async def create_flow(
     current: CurrentUser = Depends(_ctrl_studio),
     session: AsyncSession = Depends(db_session),
 ) -> FlowOut:
-    await _require_profile(session, body.profile_id)
     document = (
         empty_flow_definition()
         if body.definition is None
@@ -215,7 +206,6 @@ async def create_flow(
         code=await repos.agent.allocate_code("flow"),
         name=body.name,
         version=1,
-        profile_id=body.profile_id,
         definition=document.model_dump(mode="json"),
         status="draft",
         published_at=None,
@@ -248,9 +238,6 @@ async def patch_flow(
     flow = await _get_flow(session, flow_id)
     if flow.status != "draft":
         raise http_error(400, "flow_not_draft", "仅草稿可修改")
-    if body.profile_id is not None:
-        await _require_profile(session, body.profile_id)
-        flow.profile_id = body.profile_id
     if body.name is not None:
         flow.name = body.name
     if body.definition is not None:
@@ -293,7 +280,6 @@ async def new_draft(
         code=source.code,
         name=source.name,
         version=source.version + 1,
-        profile_id=source.profile_id,
         definition=dict(source.definition),
         status="draft",
         published_at=None,

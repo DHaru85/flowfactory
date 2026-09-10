@@ -171,7 +171,7 @@ data: <json>
 
 ### `POST /api/v1/studio/flows`
 
-`code` / `name` / `profile_id`；`definition` 可空（写入 start→end 空图）。`profile_id` 无效：`400 profile_not_found`。
+`code` / `name`；`definition` 可空（写入 start→end 空图）。创建时不再绑定 Profile；各 `llm` 节点用 `llm_ref` 各自选模型。
 
 ### `GET /api/v1/studio/flows/{flow_id}`
 

@@ -12,13 +12,11 @@ from service.runtime.definition_v1 import FlowDefinitionV1
 
 class FlowCreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=128)
-    profile_id: UUID
     definition: dict[str, object] | None = None
 
 
 class FlowPatchBody(BaseModel):
     name: str | None = Field(default=None, max_length=128)
-    profile_id: UUID | None = None
     definition: dict[str, object] | None = None
 
 
@@ -27,7 +25,6 @@ class FlowOut(BaseModel):
     code: str
     name: str
     version: int
-    profile_id: UUID
     status: str
     published_at: datetime | None
     definition: FlowDefinitionV1

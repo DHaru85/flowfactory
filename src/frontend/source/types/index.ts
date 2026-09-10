@@ -294,7 +294,6 @@ export interface FlowOut {
   code: string;
   name: string;
   version: number;
-  profile_id: string;
   status: FlowStatus;
   published_at: string | null;
   definition: FlowDefinitionV1;
@@ -302,13 +301,11 @@ export interface FlowOut {
 
 export interface FlowCreateBody {
   name: string;
-  profile_id: string;
   definition?: FlowDefinitionV1 | null;
 }
 
 export interface FlowPatchBody {
   name?: string | null;
-  profile_id?: string | null;
   definition?: FlowDefinitionV1 | null;
 }
 

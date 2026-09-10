@@ -5,7 +5,7 @@
 | 映射层 / data_schema（Permission） | 空闲 | ORM + 仓储已落地；User.roles 补 foreign_keys |
 | 映射层 / data_schema（Conversation） | 空闲 | ORM + 仓储已落地 |
 | 映射层 / data_schema（Workflow） | 空闲 | `wf_child_run_pending` ORM + Alembic b7e2c91a4d03 |
-| 映射层 / data_schema（Agent） | 空闲 | binding 含 application；主体索引 b1d8f4a06c31 |
+| 映射层 / data_schema（Agent） | 空闲 | 去掉 agent_flow.profile_id |
 | 映射层 / data_schema（Knowledge） | 空闲 | embedding 列 1024 维（bge-m3）；Alembic c4a91f2e7b10 |
 | 映射层 / data_schema（Audit） | 空闲 | ORM + 仓储已落地 |
 | 映射层 / data_schema（Graph） | 空闲 | ORM + 仓储已落地 |
@@ -13,7 +13,7 @@
 | 映射层 / data_schema（Observability） | 空闲 | ORM + Collector flush 仓储查询 |
 | 映射层 / data_schema（Notification） | 空闲 | ORM + 仓储已落地 |
 | 数据层 / service/database | 空闲 | 异步引擎改为线程局部，适配 Celery prefork/eager |
-| 数据层 / service/persistence | 空闲 | Agent 族 code 服务层生成 |
+| 数据层 / service/persistence | 空闲 | Flow 不再引用 Profile |
 | 数据层 / service/cache | 空闲 | Redis 仅热状态；SSE 帧不走 Redis |
 | 数据层 / settings | 空闲 | 默认 rabbitmq_url；stream 连接超时与投递超时分离 |
 | 服务层 / service/runtime | 空闲 | SSE 思考增量：stream_parts；落库 reasoning 块 |
@@ -26,13 +26,15 @@
 | 服务层 / service/auth | 空闲 | AccessControl；本地自助注册 |
 | 服务层 / service/tools | 空闲 | ToolExecutor；SkillRuntime |
 | docs/design（服务说明文档） | 空闲 | 流式总线默认接现网 RabbitMQ |
-| 表示层 / frontend | 空闲 | Agent 族隐藏 code |
-| 应用层 / api | 空闲 | 创建不再接收 code |
+| 表示层 / frontend | 空闲 | Studio 去掉整图 Profile |
+| 应用层 / api | 空闲 | Studio Flow 不再收 profile_id |
 | 服务层 / service/guardrail | 空闲 | GuardrailEvaluator / PolicyDetector 预留 |
 
 未列出的模块视为 **空闲**。
 
 ## 施工简报
+
+- 2026-09-10 Flow 去掉整图 Profile：删除 `agent_flow.profile_id`（Alembic f3a8c1b09e20）；Studio 创建/保存不再绑 Profile；`llm` 节点只选模型（`llm_ref`）。硬删 Profile 不再按 Flow FK 拦截。规划会话/Beat 不变。Skill 装配见 `docs/unreached/2026-09-10-Flow节点装配Profile技能-服务层-修改.md`。ruff 通过；非集成 pytest 6 passed；`npm run build` 通过。现网 Postgres 当时不可达，需在可连库后执行 `alembic upgrade head` 并重启 uvicorn、刷新前端。
 
 - 2026-08-21 Agent 族 code：创建由服务层生成 `{kind}-{8hex}`，HTTP 创建体不再收 code；PATCH 本就不能改。表示层去掉 code 输入与列，下拉/面包屑用 name。图节点仍写内部指针。pytest 19 passed；ruff 通过；`npm run build` 通过。需重启 uvicorn 并刷新前端。
 

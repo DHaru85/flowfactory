@@ -571,13 +571,11 @@ Studio：可见可用 → 列表/详情/目录；完全控制 → 草稿/发布/
 
 #### Flow Create Body
 
-`POST /api/v1/studio/flows`。`profile_id` 无效 `400 profile_not_found`。`definition` 空则服务端写入 start→end 空图。
+`POST /api/v1/studio/flows`。`definition` 空则服务端写入 start→end 空图。不绑定 Profile；`llm` 节点各自填 `llm_ref`。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `code` | `string` | 1–64 |
 | `name` | `string` | 1–128 |
-| `profile_id` | `string (UUID)` | |
 | `definition` | `FlowDefinitionV1 \| null` | 可空 |
 
 #### Flow Patch Body
@@ -587,7 +585,6 @@ Studio：可见可用 → 列表/详情/目录；完全控制 → 草稿/发布/
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `name` | `string \| null` | |
-| `profile_id` | `string (UUID) \| null` | |
 | `definition` | `FlowDefinitionV1 \| null` | |
 
 #### Flow Out
@@ -600,7 +597,6 @@ Studio：可见可用 → 列表/详情/目录；完全控制 → 草稿/发布/
 | `code` | `string` | |
 | `name` | `string` | |
 | `version` | `number` | |
-| `profile_id` | `string (UUID)` | |
 | `status` | `"draft" \| "published" \| "archived"` | |
 | `published_at` | `string \| null` | ISO 8601 |
 | `definition` | `FlowDefinitionV1` | |
@@ -674,7 +670,7 @@ Studio：可见可用 → 列表/详情/目录；完全控制 → 草稿/发布/
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `llm_ref` | `string` | `agent_llm.code` |
-| `system_prompt` | `string \| null` | 覆盖 Profile |
+| `system_prompt` | `string \| null` | 仅作用于本节点 |
 | `stream` | `boolean` | 默认 `true` |
 
 #### Tool Node Data

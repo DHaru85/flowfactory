@@ -170,7 +170,7 @@ async def test_postgres_checkpointer_setup_and_roundtrip() -> None:
 
 
 async def _published_flows(*, child_hitl: bool = False) -> tuple[User, object, object]:
-    from data_schema.agent.models import AgentFlow, AgentLlm, AgentProfile
+    from data_schema.agent.models import AgentFlow
     from service.runtime.definition_v1 import empty_flow_definition
 
     suffix = uuid4().hex[:8]
@@ -229,30 +229,10 @@ async def _published_flows(*, child_hitl: bool = False) -> tuple[User, object, o
             status="active",
         )
         session.add(user)
-        llm = AgentLlm(
-            code=f"sg-llm-{suffix}",
-            provider="local",
-            model_name="demo",
-            config={},
-            is_active=True,
-        )
-        session.add(llm)
-        await session.flush()
-        profile = AgentProfile(
-            code=f"sg-p-{suffix}",
-            name="p",
-            system_prompt="s",
-            default_llm_id=llm.id,
-            skill_ids=[],
-            owner_organization_id=org.id,
-        )
-        session.add(profile)
-        await session.flush()
         child = AgentFlow(
             code=f"child-{suffix}",
             name="child",
             version=1,
-            profile_id=profile.id,
             definition=child_def,
             status="published",
         )
@@ -261,7 +241,6 @@ async def _published_flows(*, child_hitl: bool = False) -> tuple[User, object, o
             code=f"parent-{suffix}",
             name="parent",
             version=1,
-            profile_id=profile.id,
             definition=parent_def,
             status="published",
         )

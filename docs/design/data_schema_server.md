@@ -781,7 +781,6 @@
 | `code` | VARCHAR(64) | UNIQUE, NOT NULL | |
 | `name` | VARCHAR(128) | NOT NULL | |
 | `version` | INT | NOT NULL, DEFAULT 1 | 递增版本 |
-| `profile_id` | UUID | FK → `agent_profile.id`, NOT NULL | |
 | `definition` | JSONB | NOT NULL | `FlowDefinitionDocument`；`schema_version=1` 见序列化对象，`0` 为现网松散 dict |
 | `status` | VARCHAR(16) | NOT NULL | `draft` / `published` / `archived` |
 | `published_at` | TIMESTAMPTZ | NULL | |
@@ -1004,7 +1003,7 @@ Check：`(flow_id IS NULL) <> (profile_id IS NULL)`。HTTP 管理面允许绑工
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `llm_ref` | str | `agent_llm.code` |
-| `system_prompt` | str | NULL | 覆盖 Profile 系统提示 |
+| `system_prompt` | str | NULL | 仅作用于本节点 |
 | `stream` | bool | 默认 true |
 
 ##### Pydantic `ToolNodeData`

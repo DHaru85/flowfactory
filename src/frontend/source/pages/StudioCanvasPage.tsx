@@ -12,7 +12,7 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Button, Input, Select, Space, Typography, message } from "antd";
+import { Button, Input, Space, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -22,7 +22,6 @@ import {
   listPublishedFlowCodes,
   listStudioFlows,
   listStudioLlms,
-  listStudioProfiles,
   listStudioTools,
   newStudioDraft,
   patchStudioFlow,
@@ -53,7 +52,6 @@ import type {
   FlowOut,
   LlmCatalogOut,
   NodeType,
-  ProfileCatalogOut,
   PublishedFlowCodeOut,
   ToolCatalogOut,
 } from "@/types";
@@ -137,12 +135,10 @@ function StudioCanvasInner(): ReactElement {
   const [flow, setFlow] = useState<FlowOut | null>(null);
   const [document, setDocument] = useState<FlowDefinitionV1 | null>(null);
   const [name, setName] = useState("");
-  const [profileId, setProfileId] = useState("");
   const [dirty, setDirty] = useState(false);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selection, setSelection] = useState<Selection>(null);
-  const [profiles, setProfiles] = useState<ProfileCatalogOut[]>([]);
   const [llms, setLlms] = useState<LlmCatalogOut[]>([]);
   const [tools, setTools] = useState<ToolCatalogOut[]>([]);
   const [publishedCodes, setPublishedCodes] = useState<PublishedFlowCodeOut[]>([]);
@@ -158,7 +154,6 @@ function StudioCanvasInner(): ReactElement {
     setFlow(row);
     setDocument(row.definition);
     setName(row.name);
-    setProfileId(row.profile_id);
     setDirty(false);
     setSelection(null);
     setStack([]);
@@ -173,13 +168,11 @@ function StudioCanvasInner(): ReactElement {
 
   useEffect(() => {
     void Promise.all([
-      listStudioProfiles(),
       listStudioLlms(),
       listStudioTools(),
       listPublishedFlowCodes(),
     ])
-      .then(([p, l, t, c]) => {
-        setProfiles(p);
+      .then(([l, t, c]) => {
         setLlms(l);
         setTools(t);
         setPublishedCodes(c);
@@ -347,7 +340,6 @@ function StudioCanvasInner(): ReactElement {
     }
     const saved = await patchStudioFlow(flow.id, {
       name,
-      profile_id: profileId,
       definition: document,
     });
     setFlow(saved);
@@ -440,16 +432,6 @@ function StudioCanvasInner(): ReactElement {
           }}
           disabled={readOnly}
           style={{ width: 200 }}
-        />
-        <Select
-          value={profileId}
-          onChange={(value: string) => {
-            setProfileId(value);
-            setDirty(true);
-          }}
-          disabled={readOnly}
-          style={{ width: 240 }}
-          options={profiles.map((item) => ({ value: item.id, label: item.name }))}
         />
         <Space>
           {canControl && flow.status === "draft" ? (

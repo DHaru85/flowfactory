@@ -4,20 +4,19 @@ import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { errorMessage } from "@/api/client";
-import { createStudioFlow, deleteStudioFlow, listStudioFlows, listStudioProfiles, newStudioDraft } from "@/api/studio";
+import { createStudioFlow, deleteStudioFlow, listStudioFlows, newStudioDraft } from "@/api/studio";
 import { ConfirmDelete } from "@/components/ConfirmDelete";
 import { findApp, useSession } from "@/auth/context";
-import type { FlowOut, FlowStatus, ProfileCatalogOut } from "@/types";
+import type { FlowOut, FlowStatus } from "@/types";
 
 export function StudioListPage(): ReactElement {
   const { apps } = useSession();
   const canControl = findApp(apps, "studio")?.can_control === true;
   const navigate = useNavigate();
   const [rows, setRows] = useState<FlowOut[]>([]);
-  const [profiles, setProfiles] = useState<ProfileCatalogOut[]>([]);
   const [status, setStatus] = useState<FlowStatus | "all">("all");
   const [open, setOpen] = useState(false);
-  const [form] = Form.useForm<{ name: string; profile_id: string }>();
+  const [form] = Form.useForm<{ name: string }>();
 
   const reload = useCallback(async () => {
     setRows(await listStudioFlows(status === "all" ? undefined : status));
@@ -26,12 +25,6 @@ export function StudioListPage(): ReactElement {
   useEffect(() => {
     void reload().catch((err: unknown) => message.error(errorMessage(err, "加载 Flow 失败")));
   }, [reload]);
-
-  useEffect(() => {
-    void listStudioProfiles()
-      .then(setProfiles)
-      .catch((err: unknown) => message.error(errorMessage(err, "加载 Profile 失败")));
-  }, []);
 
   return (
     <>
@@ -102,7 +95,6 @@ export function StudioListPage(): ReactElement {
           void form.validateFields().then(async (values) => {
             const created = await createStudioFlow({
               name: values.name,
-              profile_id: values.profile_id,
               definition: null,
             });
             setOpen(false);
@@ -117,16 +109,6 @@ export function StudioListPage(): ReactElement {
         <Form form={form} layout="vertical">
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "必填" }]}>
             <Input />
-          </Form.Item>
-          <Form.Item name="profile_id" label="Profile" rules={[{ required: true, message: "必填" }]}>
-            <Select
-              options={profiles.map((item) => ({
-                value: item.id,
-                label: item.name,
-              }))}
-              showSearch
-              optionFilterProp="label"
-            />
           </Form.Item>
         </Form>
       </Modal>

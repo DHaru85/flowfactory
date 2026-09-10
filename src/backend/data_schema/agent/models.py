@@ -89,7 +89,6 @@ class AgentProfile(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     default_llm: Mapped["AgentLlm | None"] = relationship(back_populates="profiles")
-    flows: Mapped[list["AgentFlow"]] = relationship(back_populates="profile")
     beat_tasks: Mapped[list["AgentBeatTask"]] = relationship(back_populates="profile")
 
 
@@ -100,16 +99,10 @@ class AgentFlow(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    profile_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("agent_profile.id"),
-        nullable=False,
-    )
     definition: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    profile: Mapped["AgentProfile"] = relationship(back_populates="flows")
     beat_tasks: Mapped[list["AgentBeatTask"]] = relationship(back_populates="flow")
     checkpoint_schemas: Mapped[list["AgentCheckpointSchema"]] = relationship(
         back_populates="flow"

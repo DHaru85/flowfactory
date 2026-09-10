@@ -127,12 +127,12 @@ async def test_studio_flow_lifecycle(api_client: AsyncClient) -> None:
         headers=headers,
         json={
             "name": "demo",
-            "profile_id": str(profile.id),
         },
     )
     assert created.status_code == 200
     body = created.json()
     assert body["status"] == "draft"
+    assert "profile_id" not in body
     assert body["definition"]["schema_version"] == 1
     flow_id = body["id"]
 

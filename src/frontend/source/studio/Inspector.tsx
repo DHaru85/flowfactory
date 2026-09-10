@@ -212,7 +212,7 @@ function NodeForm({
       ) : null}
       {node.type === "llm" ? (
         <>
-          <Form.Item name="llm_ref" label="LLM" rules={[{ required: true }]}>
+          <Form.Item name="llm_ref" label="模型" rules={[{ required: true }]}>
             <Select
               options={llms.map((item) => ({
                 value: item.code,

@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_schema.agent.models import (
     AgentBeatTask,
-    AgentCheckpointSchema,
     AgentFlow,
     AgentLlm,
     AgentMcpServer,
@@ -252,26 +251,6 @@ class AgentConfigRepository:
             AgentProfile.default_llm_id == llm_id
         )
         return int(await self._session.scalar(stmt) or 0)
-
-    async def count_flows_for_profile(self, profile_id: uuid.UUID) -> int:
-        stmt = select(func.count()).select_from(AgentFlow).where(
-            AgentFlow.profile_id == profile_id,
-            AgentFlow.status != "deleted",
-        )
-        return int(await self._session.scalar(stmt) or 0)
-
-    async def drop_deleted_flows_for_profile(self, profile_id: uuid.UUID) -> None:
-        """去掉已软删 Flow 对 Profile 的外键占用，以便硬删 Profile。"""
-        stmt = select(AgentFlow).where(
-            AgentFlow.profile_id == profile_id,
-            AgentFlow.status == "deleted",
-        )
-        result = await self._session.scalars(stmt)
-        for flow in result.all():
-            await self._session.execute(
-                delete(AgentCheckpointSchema).where(AgentCheckpointSchema.flow_id == flow.id)
-            )
-            await self._session.delete(flow)
 
     async def count_beats_for_profile(self, profile_id: uuid.UUID) -> int:
         stmt = select(func.count()).select_from(AgentBeatTask).where(

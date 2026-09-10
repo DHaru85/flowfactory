@@ -296,13 +296,10 @@ async def delete_profile(
     row = await repos.agent.profile.get(profile_id)
     if row is None:
         raise http_error(404, "profile_not_found", "Profile 不存在")
-    if await repos.agent.count_flows_for_profile(profile_id) > 0:
-        raise http_error(409, "profile_in_use", "Profile 仍被工作流引用，不可删除")
     if await repos.agent.count_beats_for_profile(profile_id) > 0:
         raise http_error(409, "profile_in_use", "Profile 仍被定时任务引用，不可删除")
     if await repos.conversation.count_active_by_profile(profile_id) > 0:
         raise http_error(409, "profile_in_use", "Profile 仍被未删除会话引用，不可删除")
-    await repos.agent.drop_deleted_flows_for_profile(profile_id)
     await drop_config_resource(session, "profile", profile_id)
     await session.delete(row)
     logger.info("删除 Profile id={}", profile_id)
